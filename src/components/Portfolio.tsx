@@ -1,6 +1,7 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useRef } from "react";
+import { motion, useScroll, useTransform } from "framer-motion";
 import Link from "next/link";
 
 const projects = [
@@ -26,76 +27,129 @@ const projects = [
   },
 ];
 
-export default function Portfolio() {
-  return (
-    <section id="portfolio" className="py-28">
-      <div className="max-w-4xl mx-auto px-6">
+function ProjectCard({ project, index, total }: { project: typeof projects[0]; index: number; total: number }) {
+  const ref = useRef<HTMLDivElement>(null);
 
-        {/* Heading */}
-        <div className="text-center mb-20">
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start end", "end start"],
+  });
+
+  // Each card scales down slightly as next card comes in
+  const scale = useTransform(scrollYProgress, [0, 0.5, 1], [0.92, 1, 0.96]);
+  const opacity = useTransform(scrollYProgress, [0, 0.15, 0.85, 1], [0, 1, 1, 0.6]);
+  const y = useTransform(scrollYProgress, [0, 0.15], [60, 0]);
+
+  return (
+    <div ref={ref} style={{ position: "sticky", top: `${80 + index * 20}px` }}>
+      <motion.div
+        style={{ scale, opacity, y }}
+        transition={{ type: "spring", stiffness: 80, damping: 20 }}
+      >
+        <div
+          className="bg-white border border-gray-200 rounded-2xl overflow-hidden"
+          style={{
+            boxShadow: `0 ${8 + index * 4}px ${24 + index * 8}px rgba(0,0,0,${0.06 + index * 0.02})`,
+            transition: "box-shadow 0.4s ease",
+          }}
+        >
+          {/* Image placeholder */}
+          <div className="h-56 overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 relative">
+            <motion.div
+              className="w-full h-full"
+              whileHover={{ scale: 1.04 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              style={{ background: `linear-gradient(135deg, #e8edf8, #d4dff2)` }}
+            />
+            {/* Card number */}
+            <div
+              style={{
+                position: "absolute",
+                top: 16,
+                right: 20,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 2,
+                color: "rgba(59,130,246,0.4)",
+              }}
+            >
+              {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6">
+            <h3 className="text-xl font-semibold mb-2 text-gray-900">{project.title}</h3>
+            <p className="text-gray-500 mb-4 text-sm leading-relaxed">{project.description}</p>
+
+            {/* Tech stack */}
+            <div className="flex flex-wrap gap-2 mb-5">
+              {project.tech.map((tech, i) => (
+                <span
+                  key={i}
+                  className="text-xs px-3 py-1 rounded-full"
+                  style={{ background: "#edf0f8", color: "#3b82f6", fontWeight: 600 }}
+                >
+                  {tech}
+                </span>
+              ))}
+            </div>
+
+            {/* Link */}
+            <Link
+              href="#"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-black hover:gap-3 transition-all duration-300"
+            >
+              View Case Study →
+            </Link>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+export default function Portfolio() {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <section
+      id="portfolio"
+      style={{
+        background: "#edf0f8",
+        backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.13) 1px, transparent 1px)",
+        backgroundSize: "28px 28px",
+        position: "relative",
+        paddingBottom: "8rem",
+      }}
+    >
+      {/* Heading */}
+      <div className="text-center pt-28 pb-16">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+        >
           <h2 className="text-4xl font-bold mb-4">Our Work</h2>
           <p className="text-gray-500">
             A selection of projects we've built for startups and businesses.
           </p>
-        </div>
+        </motion.div>
+      </div>
 
-        {/* Stacked Cards */}
-        <div className="space-y-24">
-
+      {/* Stacking cards */}
+      <div ref={containerRef} className="max-w-3xl mx-auto px-6" style={{ paddingBottom: "6rem" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
           {projects.map((project, index) => (
-            <motion.div
+            <ProjectCard
               key={index}
-              initial={{ opacity: 0, y: 80, scale: 0.95 }}
-              whileInView={{ opacity: 1, y: 0, scale: 1 }}
-              viewport={{ once: false, amount: 0.3 }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="sticky top-32"
-            >
-              <div className="bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden hover:shadow-xl transition">
-
-                {/* Image */}
-                <div className="h-56 overflow-hidden">
-                  <div className="w-full h-full bg-gray-200 hover:scale-105 transition duration-500"></div>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
-
-                  <h3 className="text-xl font-semibold mb-2 text-gray-900">
-                    {project.title}
-                  </h3>
-
-                  <p className="text-gray-600 mb-4 text-sm">
-                    {project.description}
-                  </p>
-
-                  {/* Tech stack */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {project.tech.map((tech, i) => (
-                      <span
-                        key={i}
-                        className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600"
-                      >
-                        {tech}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Case study */}
-                  <Link
-                    href="#"
-                    className="inline-flex items-center gap-1 text-sm font-medium text-black hover:gap-2 transition-all"
-                  >
-                    View Case Study →
-                  </Link>
-
-                </div>
-              </div>
-            </motion.div>
+              project={project}
+              index={index}
+              total={projects.length}
+            />
           ))}
-
         </div>
-
       </div>
     </section>
   );

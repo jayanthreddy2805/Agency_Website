@@ -16,8 +16,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agency Website",
-  description: "Modern digital agency website",
+  title: "APSLOCK — Digital Product Studio",
+  description: "We design, build and scale modern digital products for startups and businesses.",
+  icons: {
+    icon: "/logon.png",
+    apple: "/logon.png",
+  },
+  openGraph: {
+    title: "APSLOCK — Digital Product Studio",
+    description: "We design, build and scale modern digital products for startups and businesses.",
+    images: ["/logon.png"],
+  },
 };
 
 export default function RootLayout({
@@ -27,12 +36,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="pt-24 dashed-grid">
-
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased pt-24 dashed-grid`}>
         <Navbar />
         {children}
         <Footer />
-      <AEL />
+        <AEL />
       </body>
     </html>
   );

@@ -13,7 +13,7 @@ export default function Services() {
   const [active, setActive] = useState(0);
 
   return (
-    <section className="s-section">
+    <section className="s-section" id="services">
       <div className="s-grid" />
 
       <div className="s-head">

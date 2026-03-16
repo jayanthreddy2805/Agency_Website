@@ -17,7 +17,7 @@ export default function FAQ() {
   const toggle = (i: number) => setFlipped(flipped === i ? null : i);
 
   return (
-    <section className="faq-section">
+    <section className="faq-section" id="faq">
       <div className="faq-head">
         <div className="faq-tag">FAQ</div>
         <h2>Flip the <span className="out">card.</span><br />Get the answer.</h2>

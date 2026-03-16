@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
 import { Send, X } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
 
 type Message = {
   role: "user" | "assistant";
@@ -218,7 +218,8 @@ export default function AEL() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  const sandParticles = Array.from({ length: 140 }, (_, i) => ({
+  // ✅ Fixed: useMemo with closing ), [])
+  const sandParticles = useMemo(() => Array.from({ length: 140 }, (_, i) => ({
     id: i,
     top: `${Math.random() * 100}%`,
     left: `${Math.random() * 100}%`,
@@ -229,7 +230,7 @@ export default function AEL() {
     dy: (Math.random() - 0.5) * 90,
     opacity: Math.random() * 0.7 + 0.3,
     color: i % 4 === 0 ? "#6b6b6b" : i % 4 === 1 ? "#f5f2ed" : i % 4 === 2 ? "#9a9090" : "#d0ccc6",
-  }));
+  })), []);
 
   return (
     <>
@@ -483,7 +484,6 @@ export default function AEL() {
       {/* ── Chat Window ── */}
       {stage === "chat" && (
         <div className="chat-reveal fixed z-50 flex flex-col" style={{ bottom: "16px", right: "16px", width: "min(500px, calc(100vw - 32px))", height: "min(760px, calc(100vh - 32px))", borderRadius: "20px", background: "#f5f2ed", border: "1.5px solid #ddd9d2", boxShadow: "0 24px 60px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.07)", overflow: "hidden" }}>
-
           <div style={{ background: "#edeae4", borderBottom: "1.5px solid #ddd9d2", padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: "11px" }}>
               <div style={{ width: "40px", height: "52px", borderRadius: "10px", background: "#f5f2ed", border: "1.5px solid #d0ccc6", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.08)", flexShrink: 0 }}>
@@ -500,7 +500,6 @@ export default function AEL() {
               <X size={17} />
             </button>
           </div>
-
           <div className="ael-scroll" style={{ flex: 1, overflowY: "auto", padding: "18px 14px", display: "flex", flexDirection: "column", gap: "10px", background: "#f5f2ed" }}>
             {messages.length === 0 && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "12px" }}>
@@ -533,7 +532,6 @@ export default function AEL() {
             )}
             <div ref={bottomRef} />
           </div>
-
           <div style={{ padding: "12px 14px", borderTop: "1.5px solid #ddd9d2", background: "#edeae4", display: "flex", gap: "10px", alignItems: "center", flexShrink: 0 }}>
             <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKey} placeholder="Ask anything..." disabled={thinking || streaming} className="ael-input" />
             <button onClick={send} disabled={!input.trim() || thinking || streaming}
