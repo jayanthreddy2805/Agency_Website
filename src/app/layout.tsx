@@ -4,6 +4,8 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import AEL from "@/components/AEL";
+import VoiceAEL from "@/components/VoiceAEL";
+import VoiceAELButton from "@/components/VoiceAELButton";
 
 const sora = Sora({
   subsets: ["latin"],
@@ -43,6 +45,8 @@ export default function RootLayout({
         {children}
         <Footer />
         <AEL />
+        <VoiceAEL />
+        <VoiceAELButton />
       </body>
     </html>
   );
