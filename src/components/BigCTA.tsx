@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 
 export default function BigCTA() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -7,7 +8,8 @@ export default function BigCTA() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d")!;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     const ROWS = 7, GAP = 48;
     let W = 0;
     const H = ROWS * GAP;
@@ -17,6 +19,7 @@ export default function BigCTA() {
     let arrows: Arrow[] = [];
 
     function resize() {
+      if (!canvas) return;
       W = canvas.offsetWidth;
       canvas.width = W; canvas.height = H;
       arrows = [];
@@ -34,6 +37,7 @@ export default function BigCTA() {
     }
 
     function drawArrow(x: number, y: number, angle: number, alpha: number) {
+      if (!ctx) return;
       const len = 13, hw = 5;
       ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
       ctx.globalAlpha = alpha; ctx.strokeStyle = "#0f172a";
@@ -41,11 +45,12 @@ export default function BigCTA() {
       ctx.beginPath(); ctx.moveTo(-len, 0); ctx.lineTo(len * 0.3, 0); ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(len, 0); ctx.lineTo(len - hw, -hw * 0.7);
-      ctx.moveTo(len, 0); ctx.lineTo(len - hw,  hw * 0.7);
+      ctx.moveTo(len, 0); ctx.lineTo(len - hw, hw * 0.7);
       ctx.stroke(); ctx.restore();
     }
 
     function frame() {
+      if (!ctx) return;
       ctx.clearRect(0, 0, W, H);
       arrows.forEach(a => {
         if (mx > 0) a.angle = lerp(a.angle, Math.atan2(my - a.y, mx - a.x), 0.08);
@@ -57,20 +62,30 @@ export default function BigCTA() {
       raf = requestAnimationFrame(frame);
     }
 
-    const onMove  = (e: MouseEvent) => { const r = canvas.getBoundingClientRect(); mx = e.clientX - r.left; my = e.clientY - r.top; };
+    const onMove = (e: MouseEvent) => {
+      if (!canvas) return;
+      const r = canvas.getBoundingClientRect();
+      mx = e.clientX - r.left; my = e.clientY - r.top;
+    };
     const onLeave = () => { mx = -9999; my = -9999; };
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mouseleave", onLeave);
     window.addEventListener("resize", resize);
     resize(); raf = requestAnimationFrame(frame);
-    return () => { canvas.removeEventListener("mousemove", onMove); canvas.removeEventListener("mouseleave", onLeave); window.removeEventListener("resize", resize); cancelAnimationFrame(raf); };
+    return () => {
+      if (!canvas) return;
+      canvas.removeEventListener("mousemove", onMove);
+      canvas.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(raf);
+    };
   }, []);
 
   return (
     <section className="bigcta">
       <div className="content">
         <h2 className="title">You've reached the end —<br />now let's start something new!</h2>
-        <a href="/contact" className="cta-btn">Let's Connect</a>
+        <Link href="/contact" className="cta-btn">Let's Connect</Link>
         <div className="services">Web Development&nbsp;&bull;&nbsp;App Development&nbsp;&bull;&nbsp;UI/UX&nbsp;&bull;&nbsp;Branding&nbsp;&bull;&nbsp;Marketing</div>
       </div>
       <canvas ref={canvasRef} className="arrow-canvas" />

@@ -13,6 +13,7 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("http://localhost:3000"),
   title: "APSLOCK — Digital Product Studio",
   description: "We build digital products that drive growth.",
   icons: { icon: "/logon.png" },

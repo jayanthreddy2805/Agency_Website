@@ -35,7 +35,6 @@ function ProjectCard({ project, index, total }: { project: typeof projects[0]; i
     offset: ["start end", "end start"],
   });
 
-  // Each card scales down slightly as next card comes in
   const scale = useTransform(scrollYProgress, [0, 0.5, 1], [0.92, 1, 0.96]);
   const opacity = useTransform(scrollYProgress, [0, 0.15, 0.85, 1], [0, 1, 1, 0.6]);
   const y = useTransform(scrollYProgress, [0, 0.15], [60, 0]);
@@ -53,7 +52,6 @@ function ProjectCard({ project, index, total }: { project: typeof projects[0]; i
             transition: "box-shadow 0.4s ease",
           }}
         >
-          {/* Image placeholder */}
           <div className="h-56 overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 relative">
             <motion.div
               className="w-full h-full"
@@ -61,7 +59,6 @@ function ProjectCard({ project, index, total }: { project: typeof projects[0]; i
               transition={{ duration: 0.6, ease: "easeOut" }}
               style={{ background: `linear-gradient(135deg, #e8edf8, #d4dff2)` }}
             />
-            {/* Card number */}
             <div
               style={{
                 position: "absolute",
@@ -77,12 +74,9 @@ function ProjectCard({ project, index, total }: { project: typeof projects[0]; i
             </div>
           </div>
 
-          {/* Content */}
           <div className="p-6">
             <h3 className="text-xl font-semibold mb-2 text-gray-900">{project.title}</h3>
             <p className="text-gray-500 mb-4 text-sm leading-relaxed">{project.description}</p>
-
-            {/* Tech stack */}
             <div className="flex flex-wrap gap-2 mb-5">
               {project.tech.map((tech, i) => (
                 <span
@@ -94,8 +88,6 @@ function ProjectCard({ project, index, total }: { project: typeof projects[0]; i
                 </span>
               ))}
             </div>
-
-            {/* Link */}
             <Link
               href="#"
               className="inline-flex items-center gap-1 text-sm font-semibold text-black hover:gap-3 transition-all duration-300"
@@ -120,11 +112,10 @@ export default function Portfolio() {
         backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.13) 1px, transparent 1px)",
         backgroundSize: "28px 28px",
         position: "relative",
-        paddingBottom: "8rem",
+        paddingBottom: "2rem",
       }}
     >
-      {/* Heading */}
-      <div className="text-center pt-28 pb-16">
+      <div className="text-center pt-16 pb-8">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -138,8 +129,7 @@ export default function Portfolio() {
         </motion.div>
       </div>
 
-      {/* Stacking cards */}
-      <div ref={containerRef} className="max-w-3xl mx-auto px-6" style={{ paddingBottom: "6rem" }}>
+      <div ref={containerRef} className="max-w-3xl mx-auto px-6" style={{ paddingBottom: "1rem", position: "relative" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
           {projects.map((project, index) => (
             <ProjectCard

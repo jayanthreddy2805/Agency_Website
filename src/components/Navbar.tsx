@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 export default function Navbar() {
   const handleScroll = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
@@ -13,10 +14,10 @@ export default function Navbar() {
 
   return (
     <div className="fixed top-6 left-0 right-0 z-50 flex justify-center">
-      <div className="w-[1200px] flex items-center justify-between">
+      <div className="w-[1200px] flex items-center justify-between px-4">
 
         {/* Logo */}
-        <a href="/">
+        <Link href="/">
           <img
             src="/logon.png"
             alt="APSLOCK"
@@ -29,7 +30,7 @@ export default function Navbar() {
               cursor: "pointer",
             }}
           />
-        </a>
+        </Link>
 
         {/* Center Floating Menu */}
         <nav className="hidden md:flex items-center gap-8 bg-white border border-gray-200 rounded-full px-8 py-3 shadow-md">
@@ -42,17 +43,17 @@ export default function Navbar() {
           <a href="#faq" onClick={(e) => handleScroll(e, "faq")} className="text-sm font-medium hover:text-gray-500 transition-colors">
             FAQs
           </a>
-          <a href="/contact" className="text-sm font-medium hover:text-gray-500 transition-colors">
+          <Link href="/contact" className="text-sm font-medium hover:text-gray-500 transition-colors">
             Contact
-          </a>
+          </Link>
         </nav>
 
         {/* CTA Button */}
-        <a href="/contact">
+        <Link href="/contact">
           <button className="bg-black text-white px-6 py-3 rounded-full text-sm shadow-lg hover:scale-105 transition">
             Book a Call →
           </button>
-        </a>
+        </Link>
 
       </div>
     </div>

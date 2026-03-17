@@ -58,7 +58,6 @@ export default function Footer() {
               Stay ahead with design & marketing tips and strategies
               that drive results.
             </p>
-
             <div className="flex items-center border rounded-full px-4 py-2 bg-muted">
               <input
                 type="email"
@@ -76,34 +75,17 @@ export default function Footer() {
         {/* Bottom Section */}
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center px-6 py-6 text-sm text-muted-foreground border-t" style={{ position: "relative", zIndex: 1 }}>
           <p>© {new Date().getFullYear()} APSLOCK All rights reserved</p>
-
           <div className="flex gap-6 mt-3 md:mt-0">
             <Link href="#">Privacy Policy</Link>
             <Link href="#">Terms of Service</Link>
           </div>
         </div>
 
-        {/* BIG FADED BRAND TEXT (UNCHANGED STYLE) */}
+        {/* Big faded brand */}
         <div
           className="bg-gradient-to-b from-blue-500/30 via-blue-500/10 to-transparent bg-clip-text text-transparent leading-none absolute left-1/2 -translate-x-1/2 bottom-40 md:bottom-32 font-extrabold tracking-tighter pointer-events-none select-none text-center px-4"
           style={{ fontSize: "clamp(5rem, 15vw, 15rem)", maxWidth: "95vw" }}
         >
-          <img
-            src="/appslock.png"
-            alt=""
-            style={{
-              position: "absolute",
-              top: "40%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              height: "180%",
-              width: "auto",
-              opacity: 0.18,
-              pointerEvents: "none",
-              userSelect: "none",
-              zIndex: -1,
-            }}
-          />
           APSLOCK
         </div>
 

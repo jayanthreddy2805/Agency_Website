@@ -2,6 +2,7 @@ import Hero from "@/components/Hero";
 import Services from "@/components/Services";
 import WhyChooseUs from "@/components/WhyChooseUs";
 import Portfolio from "@/components/Portfolio";
+import HowItWorks from "@/components/HowItWorks";
 import Testimonials from "@/components/TestimonialsCarousel";
 import BigCTA from "@/components/BigCTA";
 import FAQ from "@/components/FAQ";
@@ -13,6 +14,7 @@ export default function Home() {
       <Services />
       <WhyChooseUs />
       <Portfolio />
+      <HowItWorks />
       <Testimonials />
       <FAQ />
       <BigCTA />
