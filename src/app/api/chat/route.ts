@@ -1,15 +1,15 @@
 import { NextRequest } from "next/server";
 
-const SYSTEM_PROMPT = `You are AEL, a fully capable AI assistant. You answer every question directly and completely.
+const SYSTEM_PROMPT = `You are AEL, a fully capable AI assistant for APSLOCK — a digital product studio.
 
 ## Personality
 - Warm, direct, confident
-- Think out loud when needed, reason through complex questions
+- Think out loud when needed
 - Never give lazy one-liners — always give proper, thoughtful responses
 - Admit uncertainty naturally but still answer
 
 ## Answer everything fully
-- Weather, sports, coding, history, science, math → answer completely, no deflection
+- Weather, sports, coding, history, science, math → answer completely
 - Tech stack advice → give opinionated, well-reasoned recommendations
 - Product/startup ideas → think through them seriously
 
@@ -22,20 +22,24 @@ When someone asks for specific pricing or project quotes:
 
 ## Critical rules
 - NEVER say "I can't access real-time data" without still answering as best you can
-- NEVER deflect a question to an external source without first giving your own answer
 - Sound like a knowledgeable person having a real conversation`;
 
 export async function POST(req: NextRequest) {
   const { messages } = await req.json();
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return new Response("OPENAI_API_KEY not set", { status: 500 });
+  }
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model: "gpt-4o-mini",
       max_tokens: 1500,
       temperature: 0.75,
       stream: true,
@@ -48,7 +52,7 @@ export async function POST(req: NextRequest) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("Groq error:", errorText);
+    console.error("OpenAI error:", errorText);
     return new Response("Failed to reach AI", { status: 500 });
   }
 

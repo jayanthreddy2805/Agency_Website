@@ -6,20 +6,27 @@ export async function POST(req: NextRequest) {
     const audio = formData.get("audio") as File;
     if (!audio) return Response.json({ transcript: "", error: "No audio" });
 
-    const groqForm = new FormData();
-    groqForm.append("file", audio, "audio.webm");
-    groqForm.append("model", "whisper-large-v3");
-    groqForm.append("language", "en");
-    groqForm.append("response_format", "json");
-    groqForm.append("temperature", "0");
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return Response.json({ transcript: "", error: "No OPENAI_API_KEY set" });
 
-    const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    const form = new FormData();
+    form.append("file", audio, "audio.webm");
+    form.append("model", "whisper-1");
+    form.append("language", "en");
+    form.append("response_format", "json");
+
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-      body: groqForm,
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
     });
 
-    if (!response.ok) return Response.json({ transcript: "", error: await response.text() });
+    if (!response.ok) {
+      const err = await response.text();
+      console.error("Whisper error:", err);
+      return Response.json({ transcript: "", error: err });
+    }
+
     const data = await response.json();
     return Response.json({ transcript: data.text?.trim() || "" });
   } catch (e) {
