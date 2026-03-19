@@ -27,24 +27,25 @@ interface HistoryEntry {
   content: string;
 }
 
-// ── SHARED MEMORY with text AEL ─────────────────────────────────────
-const SHARED_HISTORY_KEY = "ael_shared_history";
-const MEMORY_KEY = "ael_user_memory";
+// Persistent memory keys
+const MEMORY_KEY = "ael_memory";
+const HISTORY_KEY = "ael_history";
+const MAX_MEMORY = 20; // last 20 exchanges remembered across sessions
 
-function saveSharedHistory(history: HistoryEntry[]) {
+function saveMemory(history: HistoryEntry[]) {
   try {
-    localStorage.setItem(SHARED_HISTORY_KEY, JSON.stringify(history.slice(-30)));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-MAX_MEMORY)));
   } catch { }
 }
 
-function loadSharedHistory(): HistoryEntry[] {
+function loadMemory(): HistoryEntry[] {
   try {
-    const saved = localStorage.getItem(SHARED_HISTORY_KEY);
+    const saved = localStorage.getItem(HISTORY_KEY);
     return saved ? JSON.parse(saved) : [];
   } catch { return []; }
 }
 
-function saveMemoryFact(key: string, value: string) {
+function saveUserInfo(key: string, value: string) {
   try {
     const mem = JSON.parse(localStorage.getItem(MEMORY_KEY) || "{}");
     mem[key] = value;
@@ -52,37 +53,24 @@ function saveMemoryFact(key: string, value: string) {
   } catch { }
 }
 
-function loadMemory(): Record<string, string> {
+function loadUserInfo(): Record<string, string> {
   try {
     return JSON.parse(localStorage.getItem(MEMORY_KEY) || "{}");
   } catch { return {}; }
 }
 
-// ── HUMAN-LIKE SCROLL ────────────────────────────────────────────────
-// Scrolls slowly through every section in between — just like a real human
-function humanScroll(targetY: number) {
+function humanScroll(targetY: number, duration = 1400) {
   const startY = window.scrollY;
-  const distance = targetY - startY;
-  const absDist = Math.abs(distance);
-
-  // The further away, the longer it takes — exactly like human scrolling
-  // Min 1.2s, max 4s depending on distance
-  const duration = Math.min(Math.max(absDist / 300 * 1000, 1200), 4000);
-
+  const dist = targetY - startY;
   let start: number | null = null;
-
-  // Ease in-out cubic — starts slow, speeds up, slows down at end
   const ease = (t: number) =>
     t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
   const step = (ts: number) => {
     if (!start) start = ts;
-    const elapsed = ts - start;
-    const progress = Math.min(elapsed / duration, 1);
-    window.scrollTo(0, startY + distance * ease(progress));
-    if (progress < 1) requestAnimationFrame(step);
+    const p = Math.min((ts - start) / duration, 1);
+    window.scrollTo(0, startY + dist * ease(p));
+    if (p < 1) requestAnimationFrame(step);
   };
-
   requestAnimationFrame(step);
 }
 
@@ -107,15 +95,14 @@ export default function VoiceAEL() {
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
-
   useEffect(() => {
     mountedRef.current = true;
-    // Load shared history from both voice + text AEL sessions
-    history.current = loadSharedHistory();
+    // Load memory from previous sessions
+    history.current = loadMemory();
     return () => { mountedRef.current = false; };
   }, []);
 
-  // ── CLOSE ──────────────────────────────────────────────────────────
+  // ── CLOSE ─────────────────────────────────────────────────────────
   const closeAEL = useCallback(() => {
     try { recRef.current?.stop(); recRef.current?.abort(); } catch { }
     window.speechSynthesis.cancel();
@@ -127,7 +114,7 @@ export default function VoiceAEL() {
     setInterimCaption("");
   }, []);
 
-  // ── SPEAK ──────────────────────────────────────────────────────────
+  // ── SPEAK ─────────────────────────────────────────────────────────
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise(async (resolve) => {
       if (!mountedRef.current) { resolve(); return; }
@@ -136,6 +123,7 @@ export default function VoiceAEL() {
       setInterimCaption("");
       setIsSearching(false);
 
+      // Try ElevenLabs flash model
       try {
         const res = await fetch("/api/tts", {
           method: "POST",
@@ -156,7 +144,7 @@ export default function VoiceAEL() {
         }
       } catch { }
 
-      // Browser TTS fallback
+      // Browser TTS fallback — pick best available voice
       window.speechSynthesis.cancel();
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate = 1.0; utt.pitch = 1.05; utt.volume = 1.0;
@@ -174,31 +162,24 @@ export default function VoiceAEL() {
     });
   }, []);
 
-  // ── EXECUTE ACTIONS ────────────────────────────────────────────────
+  // ── EXECUTE ACTIONS ───────────────────────────────────────────────
   const executeActions = useCallback(async (actions: BrainAction[]) => {
     for (const a of actions) {
       switch (a.type) {
-
         case "scroll_to": {
-          // If not on home page, navigate there first
           if (pathnameRef.current !== "/") {
             router.push("/");
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 900));
           }
           const el = document.getElementById(a.target!);
-          if (el) {
-            const targetY = el.getBoundingClientRect().top + window.scrollY - 80;
-            humanScroll(targetY); // human-like scroll through everything in between
-          }
+          if (el) humanScroll(el.getBoundingClientRect().top + window.scrollY - 80);
           break;
         }
-
         case "navigate": {
           router.push(a.page!);
           await new Promise(r => setTimeout(r, 700));
           break;
         }
-
         case "fill": {
           await new Promise(r => setTimeout(r, 350));
           const el = document.querySelector(a.selector!) as HTMLInputElement | HTMLTextAreaElement | null;
@@ -207,20 +188,18 @@ export default function VoiceAEL() {
             el.value = a.value!;
             el.dispatchEvent(new Event("input", { bubbles: true }));
             el.dispatchEvent(new Event("change", { bubbles: true }));
-            // Save to memory
-            if (a.selector?.includes("John Doe")) saveMemoryFact("name", a.value!);
-            if (a.selector?.includes("email")) saveMemoryFact("email", a.value!);
+            // Extract and save user info for memory
+            if (a.selector?.includes("John Doe")) saveUserInfo("name", a.value!);
+            if (a.selector?.includes("email")) saveUserInfo("email", a.value!);
           }
           break;
         }
-
         case "click": {
           await new Promise(r => setTimeout(r, 250));
           const el = document.querySelector(a.selector!) as HTMLElement | null;
           if (el) el.click();
           break;
         }
-
         case "highlight": {
           const el = document.querySelector(a.selector!) as HTMLElement | null;
           if (el) {
@@ -236,7 +215,7 @@ export default function VoiceAEL() {
     }
   }, [router]);
 
-  // ── PROCESS ────────────────────────────────────────────────────────
+  // ── PROCESS WITH BRAIN ────────────────────────────────────────────
   const processWith = useCallback(async (transcript: string) => {
     if (processingRef.current) return;
     processingRef.current = true;
@@ -245,14 +224,14 @@ export default function VoiceAEL() {
     setCaption(transcript);
     setInterimCaption("");
 
-    // Include user memory context
-    const userMem = loadMemory();
-    const memNote = Object.keys(userMem).length > 0
-      ? `[I know about this user: ${JSON.stringify(userMem)}] `
+    // Build message with user context from memory
+    const userInfo = loadUserInfo();
+    const contextNote = Object.keys(userInfo).length > 0
+      ? `[User info from memory: ${JSON.stringify(userInfo)}]\n`
       : "";
 
-    history.current.push({ role: "user", content: memNote + transcript });
-    saveSharedHistory(history.current); // save immediately
+    history.current.push({ role: "user", content: contextNote + transcript });
+    saveMemory(history.current);
 
     const domContext = ["services", "portfolio", "achievements", "faq"]
       .filter(id => !!document.getElementById(id)).join(", ");
@@ -271,14 +250,15 @@ export default function VoiceAEL() {
       const brain: BrainResponse = await res.json();
       if (!mountedRef.current) { processingRef.current = false; return; }
 
+      // If it needs web search — show searching state
       if (brain.needsSearch) {
         setIsSearching(true);
-        setCaption("Searching...");
+        setCaption("Searching the web...");
       }
 
       setMood(brain.mood || "neutral");
       history.current.push({ role: "assistant", content: brain.speech });
-      saveSharedHistory(history.current); // save after response too
+      saveMemory(history.current);
 
       await speak(brain.speech);
       if (brain.actions?.length) await executeActions(brain.actions);
@@ -298,14 +278,14 @@ export default function VoiceAEL() {
       processingRef.current = false;
       setIsSearching(false);
       await speak("Something went wrong, try again.");
-      setPhase("listening");
       setCaption("");
+      setPhase("listening");
       startListening();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speak, executeActions, closeAEL]);
 
-  // ── START LISTENING ────────────────────────────────────────────────
+  // ── START LISTENING ───────────────────────────────────────────────
   const startListening = useCallback(() => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
       setCaption("Use Chrome for voice.");
@@ -351,7 +331,7 @@ export default function VoiceAEL() {
       if (e.error === "no-speech") {
         if (phaseRef.current === "listening" && mountedRef.current) setTimeout(startListening, 200);
       } else if (e.error === "not-allowed") {
-        setCaption("Allow mic in Chrome settings.");
+        setCaption("Allow mic access in Chrome settings.");
       }
     };
 
@@ -359,21 +339,22 @@ export default function VoiceAEL() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processWith]);
 
-  // ── ACTIVATE ───────────────────────────────────────────────────────
+  // ── ACTIVATE ─────────────────────────────────────────────────────
   const activateAEL = useCallback(() => {
     if (phaseRef.current !== "dormant") return;
     processingRef.current = false;
     try { wakeRecRef.current?.stop(); } catch { }
-    // Load latest shared history on open
-    history.current = loadSharedHistory();
+
     setVisible(true);
     setPhase("listening");
     setCaption("");
     setInterimCaption("");
+    // Keep history — don't reset, so AEL remembers across opens
+
     setTimeout(() => startListening(), 120);
   }, [startListening]);
 
-  // ── WAKE WORD ──────────────────────────────────────────────────────
+  // ── WAKE WORD ─────────────────────────────────────────────────────
   const startWakeDetection = useCallback(() => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -419,7 +400,7 @@ export default function VoiceAEL() {
     setTimeout(wake, 1200);
   }, [activateAEL]);
 
-  // ── INIT ───────────────────────────────────────────────────────────
+  // ── INIT ──────────────────────────────────────────────────────────
   useEffect(() => {
     (window as any).__activateAEL = activateAEL;
     return () => { delete (window as any).__activateAEL; };
@@ -457,18 +438,17 @@ export default function VoiceAEL() {
   const isListening = phase === "listening";
   const isProcessing = phase === "processing";
   const isSpeaking = phase === "speaking";
-  const memCount = history.current.length;
 
   return (
     <>
       <style>{`
         @keyframes ael-ring{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.8);opacity:0}}
-        @keyframes ael-orb{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+        @keyframes ael-orb{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.07);opacity:.85}}
         @keyframes ael-bar{0%,100%{height:4px}50%{height:28px}}
         @keyframes ael-panel{from{opacity:0;transform:translate(-50%,calc(50% + 16px))}to{opacity:1;transform:translate(-50%,50%)}}
         @keyframes ael-spin{to{transform:rotate(360deg)}}
         @keyframes ael-fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes ael-blink{0%,100%{opacity:.4}50%{opacity:1}}
+        @keyframes ael-search{0%,100%{opacity:.4}50%{opacity:1}}
         .ael-panel{animation:ael-panel .3s cubic-bezier(.16,1,.3,1) both}
         .ael-r1{animation:ael-ring 2s ease-out infinite}
         .ael-r2{animation:ael-ring 2s ease-out .7s infinite}
@@ -482,7 +462,9 @@ export default function VoiceAEL() {
         .ael-bar:nth-child(9){animation-delay:0s}
         .ael-spin{animation:ael-spin .9s linear infinite}
         .ael-fade{animation:ael-fade .2s ease both}
-        .ael-blink{animation:ael-blink 1.2s ease-in-out infinite}
+        .ael-search-dot{animation:ael-search 1.2s ease-in-out infinite}
+        .ael-search-dot:nth-child(2){animation-delay:.2s}
+        .ael-search-dot:nth-child(3){animation-delay:.4s}
       `}</style>
 
       <div style={{position:"fixed",inset:0,zIndex:9998,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)"}} onClick={closeAEL}/>
@@ -503,13 +485,11 @@ export default function VoiceAEL() {
           onMouseEnter={e=>(e.currentTarget.style.color="rgba(255,255,255,0.6)")}
           onMouseLeave={e=>(e.currentTarget.style.color="rgba(255,255,255,0.18)")}>✕</button>
 
-        {/* Shared memory badge */}
-        {memCount > 0 && (
+        {/* Memory indicator */}
+        {history.current.length > 0 && (
           <div style={{position:"absolute",top:16,left:18,display:"flex",alignItems:"center",gap:5}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:"#8b5cf6",opacity:.7}}/>
-            <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:"1px",textTransform:"uppercase"}}>
-              {memCount} memories
-            </span>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#8b5cf6",opacity:.6}}/>
+            <span style={{fontSize:9,color:"rgba(255,255,255,0.25)",letterSpacing:"1px"}}>MEMORY ON</span>
           </div>
         )}
 
@@ -519,11 +499,11 @@ export default function VoiceAEL() {
             <div key={i} className={c} style={{position:"absolute",width:84,height:84,borderRadius:"50%",border:`1px solid ${orbColor}`,opacity:0,pointerEvents:"none"}}/>
           ))}
           <div className={isListening?"ael-orb-pulse":""} style={{
-            width:66,height:66,borderRadius:"50%",
+            width:66, height:66, borderRadius:"50%",
             background:`radial-gradient(circle at 35% 30%,${orbColor}ee,${orbColor}44)`,
             border:`2px solid ${orbColor}`,
-            display:"flex",alignItems:"center",justifyContent:"center",
-            transition:"background .4s,border-color .4s",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            transition:"background .4s, border-color .4s",
           }}>
             {isProcessing?(
               <svg className="ael-spin" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.22-8.56" strokeLinecap="round"/></svg>
@@ -555,37 +535,37 @@ export default function VoiceAEL() {
         {/* Searching indicator */}
         {isSearching&&(
           <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>searching web</span>
             {[0,1,2].map(i=>(
-              <div key={i} className="ael-blink" style={{width:5,height:5,borderRadius:"50%",background:orbColor,animationDelay:`${i*0.2}s`}}/>
+              <div key={i} className="ael-search-dot" style={{width:4,height:4,borderRadius:"50%",background:orbColor}}/>
             ))}
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>searching web</span>
           </div>
         )}
 
-        {/* Live transcript — what user is saying */}
+        {/* Live interim caption — what user is saying */}
         {interimCaption&&isListening&&(
           <div key={interimCaption} className="ael-fade" style={{fontSize:13,color:"rgba(255,255,255,0.45)",textAlign:"center",lineHeight:1.6,maxWidth:320,fontStyle:"italic"}}>
             "{interimCaption}"
           </div>
         )}
 
-        {/* AEL response */}
+        {/* AEL response caption */}
         {caption&&!interimCaption&&(
           <div key={caption} className="ael-fade" style={{fontSize:15,color:"rgba(255,255,255,0.9)",textAlign:"center",lineHeight:1.7,maxWidth:340,fontWeight:400}}>
             {caption}
           </div>
         )}
 
-        {/* Idle */}
+        {/* Idle state */}
         {isListening&&!interimCaption&&!caption&&(
           <div style={{fontSize:12,color:"rgba(255,255,255,0.18)",textAlign:"center"}}>say something...</div>
         )}
 
-        {/* Memory dots */}
+        {/* Conversation dots */}
         {history.current.length>0&&(
           <div style={{display:"flex",gap:3,alignItems:"center",flexWrap:"wrap",justifyContent:"center",maxWidth:200}}>
             {history.current.slice(-16).map((h,i)=>(
-              <div key={i} style={{width:5,height:5,borderRadius:"50%",background:h.role==="user"?"#3b82f6":"#8b5cf6",opacity:.2+i*.05,flexShrink:0}}/>
+              <div key={i} style={{width:5,height:5,borderRadius:"50%",background:h.role==="user"?"#3b82f6":"#8b5cf6",opacity:.25+i*.05,flexShrink:0}}/>
             ))}
           </div>
         )}
