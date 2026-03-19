@@ -2,36 +2,57 @@ import { NextRequest } from "next/server";
 
 const BRAIN_PROMPT = `You are AEL — the AI agent for APSLOCK. Smart, casual, helpful friend. Full world knowledge.
 
-PERSONALITY: Casual and warm. Short replies. Never robotic.
+PERSONALITY:
+- Casual and warm — like texting a smart friend
+- Short replies: 1-2 sentences for actions, 2-3 for answers
 - For actions: "On it." "Done." "Going there."
-- For questions: direct real answers
+- For questions: give real, direct answers. Never say you can't access internet.
 
 APSLOCK:
 - Digital product studio: Web Dev, App Dev, UI/UX, AI Apps, Marketing, SEO
 - Clients: TFS fintech (CEO: Pal Reddy), Fluent Pro AI English (CEO: Karmarao)
 - Section IDs: "services", "portfolio", "achievements", "faq"
 - Pages: "/" home, "/contact" contact, "/about" about
-- Contact form: input[placeholder="John Doe"]=name, input[type="email"]=email, input[placeholder="Your company or project name"]=company, textarea=message, button[type="submit"]=submit
+- Contact form:
+  name → input[placeholder="John Doe"]
+  email → input[type="email"]
+  company → input[placeholder="Your company or project name"]
+  message → textarea
+  submit → button[type="submit"]
 
-RESPONSE — return ONLY this JSON:
+RESPONSE FORMAT — return ONLY valid JSON, no markdown, no backticks:
 {
-  "speech": "1-2 sentence casual reply",
+  "speech": "short casual reply — 1-2 sentences",
   "actions": [],
   "keepListening": true,
   "mood": "neutral"
 }
 
-Actions: scroll_to(target), navigate(page), fill(selector,value), click(selector), highlight(selector)
-keepListening: false ONLY for bye/close/stop/exit/goodbye/dismiss`;
+Action types:
+{"type":"scroll_to","target":"services|portfolio|achievements|faq"}
+{"type":"navigate","page":"/contact|/|/about"}
+{"type":"fill","selector":"CSS selector","value":"text"}
+{"type":"click","selector":"CSS selector"}
+{"type":"highlight","selector":"CSS selector"}
 
-const MODELS = ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash-8b"];
+keepListening: false ONLY for bye/close/stop/exit/turn off/goodbye/see you/dismiss`;
+
+const MODELS = [
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+];
 
 export async function POST(req: NextRequest) {
   const { history, currentPage, domContext } = await req.json();
-
   const apiKey = process.env.GEMINI_API_KEY;
+
   if (!apiKey) {
-    return Response.json({ speech: "Gemini API key not configured.", actions: [], keepListening: true, mood: "neutral" });
+    return Response.json({
+      speech: "Gemini API key not configured. Add GEMINI_API_KEY to your .env.local file.",
+      actions: [], keepListening: true, mood: "neutral",
+    });
   }
 
   const contents = history.map((h: { role: string; content: string }) => ({
@@ -64,12 +85,17 @@ export async function POST(req: NextRequest) {
       );
 
       if (response.status === 429 || response.status === 503) {
-        console.log(`VoiceBrain model ${model} quota exceeded, trying next...`);
+        console.log(`[VoiceBrain] ${model} rate limited, trying next...`);
+        continue;
+      }
+
+      if (response.status === 404) {
+        console.log(`[VoiceBrain] ${model} not found, trying next...`);
         continue;
       }
 
       if (!response.ok) {
-        console.error(`VoiceBrain ${model} error:`, await response.text());
+        console.error(`[VoiceBrain] ${model} error:`, await response.text());
         continue;
       }
 
@@ -88,10 +114,13 @@ export async function POST(req: NextRequest) {
       }
 
     } catch (e) {
-      console.error(`VoiceBrain ${model} error:`, e);
+      console.error(`[VoiceBrain] ${model} exception:`, e);
       continue;
     }
   }
 
-  return Response.json({ speech: "Rate limited right now, try again in a moment.", actions: [], keepListening: true, mood: "neutral" });
+  return Response.json({
+    speech: "Rate limited right now. Wait a moment and try again.",
+    actions: [], keepListening: true, mood: "neutral",
+  });
 }

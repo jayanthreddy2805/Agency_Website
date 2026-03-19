@@ -7,12 +7,13 @@ You are a smart, warm, direct assistant. You answer every question fully and hon
 ## APSLOCK knowledge
 - Services: Web Development, App Development, UI/UX Design, AI Applications, Digital Marketing, SEO
 - Past clients: TFS (fintech app, CEO Pal Reddy), Fluent Pro (AI English learning, CEO Karmarao)
-- Contact page is at /contact
+- Contact page at /contact
 
 ## Personality
 - Warm, confident, direct — like a knowledgeable friend
 - Never robotic or corporate
 - Give real answers, not deflections
+- Short for simple questions, detailed for complex ones
 
 ## Pricing questions
 When asked about pricing: discuss factors, give rough ballparks, then end with:
@@ -23,37 +24,43 @@ And add exactly this on its own line: {{BOOK_A_CALL}}
 - NEVER say you cannot access real-time data — just answer from knowledge
 - Sound like a real person in conversation`;
 
-// Models to try in order — if one hits quota, fall back to next
+// Verified working Gemini model names on v1beta
 const MODELS = [
   "gemini-2.0-flash-lite",
   "gemini-2.0-flash",
-  "gemini-1.5-flash-8b",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
 ];
 
 export async function POST(req: NextRequest) {
   const { messages } = await req.json();
-
   const apiKey = process.env.GEMINI_API_KEY;
 
   const sendText = (text: string) => {
     const stream = new ReadableStream({
       start(controller) {
-        const formatted = JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } });
+        const formatted = JSON.stringify({
+          type: "content_block_delta",
+          delta: { type: "text_delta", text },
+        });
         controller.enqueue(new TextEncoder().encode(`data: ${formatted}\n\n`));
         controller.close();
       },
     });
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+    return new Response(stream, {
+      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+    });
   };
 
-  if (!apiKey) return sendText("Gemini API key is not set. Add GEMINI_API_KEY to your .env.local file.");
+  if (!apiKey) {
+    return sendText("GEMINI_API_KEY is not set in your .env.local file.");
+  }
 
   const geminiContents = messages.map((m: { role: string; content: string }) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
 
-  // Try each model until one works
   for (const model of MODELS) {
     try {
       const response = await fetch(
@@ -64,29 +71,39 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
             contents: geminiContents,
-            generationConfig: { maxOutputTokens: 1500, temperature: 0.75 },
+            generationConfig: {
+              maxOutputTokens: 1500,
+              temperature: 0.75,
+            },
           }),
         }
       );
 
+      // Rate limited — try next model
       if (response.status === 429 || response.status === 503) {
-        // Quota exceeded — try next model
-        console.log(`Model ${model} quota exceeded, trying next...`);
+        console.log(`[AEL] ${model} rate limited, trying next...`);
+        continue;
+      }
+
+      // Model not found — try next
+      if (response.status === 404) {
+        console.log(`[AEL] ${model} not found, trying next...`);
         continue;
       }
 
       if (!response.ok) {
-        const err = await response.text();
-        console.error(`Gemini ${model} error:`, err);
+        const errText = await response.text();
+        console.error(`[AEL] ${model} error ${response.status}:`, errText);
+        // Show the actual error to help debug
         try {
-          const errJson = JSON.parse(err);
+          const errJson = JSON.parse(errText);
           const msg = errJson?.[0]?.error?.message || errJson?.error?.message;
-          if (msg) return sendText(msg);
+          if (msg) return sendText(`Error: ${msg}`);
         } catch { }
         continue;
       }
 
-      // Stream the response
+      // Success — stream response back
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body!.getReader();
@@ -105,25 +122,28 @@ export async function POST(req: NextRequest) {
               const trimmed = line.trim();
               if (!trimmed || trimmed === "[" || trimmed === "]" || trimmed === ",") continue;
               try {
-                const clean = trimmed.replace(/^,/, "");
-                const parsed = JSON.parse(clean);
+                const parsed = JSON.parse(trimmed.replace(/^,/, ""));
                 const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
                 if (text) {
-                  const formatted = JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } });
+                  const formatted = JSON.stringify({
+                    type: "content_block_delta",
+                    delta: { type: "text_delta", text },
+                  });
                   controller.enqueue(new TextEncoder().encode(`data: ${formatted}\n\n`));
                 }
               } catch { }
             }
           }
 
-          // Flush remaining buffer
           if (buffer.trim()) {
             try {
-              const clean = buffer.trim().replace(/^,/, "").replace(/^\[/, "").replace(/\]$/, "");
-              const parsed = JSON.parse(clean);
+              const parsed = JSON.parse(buffer.trim().replace(/^,/, "").replace(/^\[/, "").replace(/\]$/, ""));
               const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
               if (text) {
-                const formatted = JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } });
+                const formatted = JSON.stringify({
+                  type: "content_block_delta",
+                  delta: { type: "text_delta", text },
+                });
                 controller.enqueue(new TextEncoder().encode(`data: ${formatted}\n\n`));
               }
             } catch { }
@@ -138,11 +158,10 @@ export async function POST(req: NextRequest) {
       });
 
     } catch (e) {
-      console.error(`Model ${model} error:`, e);
+      console.error(`[AEL] ${model} exception:`, e);
       continue;
     }
   }
 
-  // All models failed
-  return sendText("All Gemini models are currently rate limited. Please wait a minute and try again. This is a free tier limit — it resets automatically.");
+  return sendText("All Gemini models are currently rate limited. Wait 1 minute and try again — this resets automatically on the free tier.");
 }
