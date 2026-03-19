@@ -483,7 +483,7 @@ export default function AEL() {
 
       {/* ── Chat Window ── */}
       {stage === "chat" && (
-        <div className="chat-reveal fixed z-50 flex flex-col" style={{ bottom: "16px", right: "16px", width: "min(500px, calc(100vw - 32px))", height: "min(760px, calc(100vh - 32px))", borderRadius: "20px", background: "#f5f2ed", border: "1.5px solid #ddd9d2", boxShadow: "0 24px 60px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.07)", overflow: "hidden" }}>
+        <div className="chat-reveal fixed z-50 flex flex-col" style={{ bottom: "16px", right: "16px", width: "min(480px, calc(100vw - 32px))", height: "min(680px, calc(100vh - 120px))", borderRadius: "20px", background: "#f5f2ed", border: "1.5px solid #ddd9d2", boxShadow: "0 24px 60px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.07)", overflow: "hidden" }}>
           <div style={{ background: "#edeae4", borderBottom: "1.5px solid #ddd9d2", padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: "11px" }}>
               <div style={{ width: "40px", height: "52px", borderRadius: "10px", background: "#f5f2ed", border: "1.5px solid #d0ccc6", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.08)", flexShrink: 0 }}>

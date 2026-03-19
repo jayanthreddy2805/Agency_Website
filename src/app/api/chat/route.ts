@@ -13,7 +13,6 @@ You are a smart, warm, direct assistant. You answer every question fully and hon
 - Warm, confident, direct — like a knowledgeable friend
 - Never robotic or corporate
 - Give real answers, not deflections
-- Short for simple questions, detailed for complex ones
 
 ## Pricing questions
 When asked about pricing: discuss factors, give rough ballparks, then end with:
@@ -22,15 +21,21 @@ And add exactly this on its own line: {{BOOK_A_CALL}}
 
 ## Rules
 - NEVER say you cannot access real-time data — just answer from knowledge
-- NEVER refuse to engage with any topic
 - Sound like a real person in conversation`;
+
+// Models to try in order — if one hits quota, fall back to next
+const MODELS = [
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash-8b",
+];
 
 export async function POST(req: NextRequest) {
   const { messages } = await req.json();
 
   const apiKey = process.env.GEMINI_API_KEY;
 
-  const sendError = (text: string) => {
+  const sendText = (text: string) => {
     const stream = new ReadableStream({
       start(controller) {
         const formatted = JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } });
@@ -41,64 +46,80 @@ export async function POST(req: NextRequest) {
     return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
   };
 
-  if (!apiKey) return sendError("GEMINI_API_KEY is not set in your .env.local file.");
+  if (!apiKey) return sendText("Gemini API key is not set. Add GEMINI_API_KEY to your .env.local file.");
 
-  // Convert messages to Gemini format
   const geminiContents = messages.map((m: { role: string; content: string }) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
 
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: geminiContents,
-          generationConfig: {
-            maxOutputTokens: 1500,
-            temperature: 0.75,
-          },
-        }),
+  // Try each model until one works
+  for (const model of MODELS) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: geminiContents,
+            generationConfig: { maxOutputTokens: 1500, temperature: 0.75 },
+          }),
+        }
+      );
+
+      if (response.status === 429 || response.status === 503) {
+        // Quota exceeded — try next model
+        console.log(`Model ${model} quota exceeded, trying next...`);
+        continue;
       }
-    );
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.error("Gemini chat error:", err);
-      try {
-        const errJson = JSON.parse(err);
-        const msg = errJson?.[0]?.error?.message || errJson?.error?.message || "Gemini API error.";
-        return sendError(msg);
-      } catch {
-        return sendError("Failed to reach Gemini. Check your API key.");
+      if (!response.ok) {
+        const err = await response.text();
+        console.error(`Gemini ${model} error:`, err);
+        try {
+          const errJson = JSON.parse(err);
+          const msg = errJson?.[0]?.error?.message || errJson?.error?.message;
+          if (msg) return sendText(msg);
+        } catch { }
+        continue;
       }
-    }
 
-    // Gemini streams as JSON array chunks — parse and re-stream
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = response.body!.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
+      // Stream the response
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
 
-          // Gemini sends JSON chunks — extract text from each chunk
-          const chunks = buffer.split("\n");
-          buffer = chunks.pop() || "";
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
 
-          for (const chunk of chunks) {
-            const line = chunk.trim();
-            if (!line || line === "[" || line === "]" || line === ",") continue;
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === "[" || trimmed === "]" || trimmed === ",") continue;
+              try {
+                const clean = trimmed.replace(/^,/, "");
+                const parsed = JSON.parse(clean);
+                const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                  const formatted = JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } });
+                  controller.enqueue(new TextEncoder().encode(`data: ${formatted}\n\n`));
+                }
+              } catch { }
+            }
+          }
+
+          // Flush remaining buffer
+          if (buffer.trim()) {
             try {
-              const clean = line.replace(/^,/, "");
+              const clean = buffer.trim().replace(/^,/, "").replace(/^\[/, "").replace(/\]$/, "");
               const parsed = JSON.parse(clean);
               const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
               if (text) {
@@ -107,30 +128,21 @@ export async function POST(req: NextRequest) {
               }
             } catch { }
           }
-        }
 
-        // Process any remaining buffer
-        if (buffer.trim()) {
-          try {
-            const clean = buffer.trim().replace(/^,/, "").replace(/^\[/, "").replace(/\]$/, "");
-            const parsed = JSON.parse(clean);
-            const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) {
-              const formatted = JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } });
-              controller.enqueue(new TextEncoder().encode(`data: ${formatted}\n\n`));
-            }
-          } catch { }
-        }
+          controller.close();
+        },
+      });
 
-        controller.close();
-      },
-    });
+      return new Response(stream, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+      });
 
-    return new Response(stream, {
-      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-    });
-  } catch (e) {
-    console.error("Chat route error:", e);
-    return sendError("Connection error. Please check your internet connection.");
+    } catch (e) {
+      console.error(`Model ${model} error:`, e);
+      continue;
+    }
   }
+
+  // All models failed
+  return sendText("All Gemini models are currently rate limited. Please wait a minute and try again. This is a free tier limit — it resets automatically.");
 }
