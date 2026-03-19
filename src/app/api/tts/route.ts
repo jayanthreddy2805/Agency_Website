@@ -2,51 +2,64 @@ import { NextRequest } from "next/server";
 
 export async function POST(req: NextRequest) {
   const { text } = await req.json();
-  if (!text?.trim()) return Response.json({ fallback: true, text });
+  if (!text?.trim()) return Response.json({ fallback: true });
 
   const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) return Response.json({ fallback: true, text });
+  if (!apiKey) return Response.json({ fallback: true });
 
-  // eleven_flash_v2_5 = fastest ElevenLabs model, <75ms latency
-  // Flash model starts speaking almost instantly
   const voiceId = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 
-  const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "xi-api-key": apiKey,
-        // Request low-latency streaming
-        "Accept": "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_flash_v2_5", // fastest model — <75ms vs 300ms on turbo
-        voice_settings: {
-          stability: 0.45,        // slightly lower = more expressive, natural
-          similarity_boost: 0.80, // high = stays true to voice character
-          style: 0.35,            // adds natural expressiveness
-          use_speaker_boost: true,
-          speed: 1.05,            // slightly faster speech = feels more natural
-        },
-        // Optimize for streaming — send audio as soon as first chunk ready
-        optimize_streaming_latency: 4,
-      }),
-    }
-  );
+  // Try models in order — flash first (fastest), turbo as fallback
+  const models = ["eleven_turbo_v2_5", "eleven_turbo_v2", "eleven_monolingual_v1"];
 
-  if (!response.ok) {
-    console.error("ElevenLabs error:", await response.text());
-    return Response.json({ fallback: true, text });
+  for (const model of models) {
+    try {
+      const response = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "xi-api-key": apiKey,
+            "Accept": "audio/mpeg",
+          },
+          body: JSON.stringify({
+            text,
+            model_id: model,
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75,
+              style: 0.3,
+              use_speaker_boost: true,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const err = await response.text();
+        console.error(`ElevenLabs ${model} error:`, err);
+        continue; // try next model
+      }
+
+      const audioBuffer = await response.arrayBuffer();
+      if (audioBuffer.byteLength === 0) {
+        console.error(`ElevenLabs ${model} returned empty audio`);
+        continue;
+      }
+
+      return new Response(audioBuffer, {
+        headers: {
+          "Content-Type": "audio/mpeg",
+          "Cache-Control": "no-cache",
+        },
+      });
+    } catch (e) {
+      console.error(`ElevenLabs ${model} exception:`, e);
+      continue;
+    }
   }
 
-  const audioBuffer = await response.arrayBuffer();
-  return new Response(audioBuffer, {
-    headers: {
-      "Content-Type": "audio/mpeg",
-      "Cache-Control": "no-cache",
-    },
-  });
+  // All models failed — return fallback signal
+  return Response.json({ fallback: true });
 }

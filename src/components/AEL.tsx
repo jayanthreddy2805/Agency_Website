@@ -155,12 +155,23 @@ export default function AEL() {
     setTimeout(() => dismissToClose(), 2200);
   };
 
+  // ── Shared memory with VoiceAEL ──────────────────────────────────
+  const saveToSharedMemory = (role: "user" | "assistant", text: string) => {
+    try {
+      const KEY = "ael_history";
+      const saved = JSON.parse(localStorage.getItem(KEY) || "[]");
+      saved.push({ role, content: text });
+      localStorage.setItem(KEY, JSON.stringify(saved.slice(-30)));
+    } catch { }
+  };
+
   const send = async () => {
     if (!input.trim() || thinking || streaming) return;
     const userText = input.trim();
     setInput("");
     setThinking(true);
     setMessages((prev) => [...prev, { role: "user", content: userText }]);
+    saveToSharedMemory("user", userText);
     const apiMessages = [
       ...messages.filter((m) => !m.synthetic).map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: userText },
@@ -207,6 +218,7 @@ export default function AEL() {
         }
       }
       setStreaming(false);
+      if (fullReply) saveToSharedMemory("assistant", fullReply.replace("{{BOOK_A_CALL}}", "").trimEnd());
     } catch {
       setThinking(false);
       setStreaming(false);

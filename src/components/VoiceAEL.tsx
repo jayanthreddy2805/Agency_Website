@@ -123,31 +123,53 @@ export default function VoiceAEL() {
       setInterimCaption("");
       setIsSearching(false);
 
-      // Try ElevenLabs flash model
+      // Try ElevenLabs — consistent voice every time
       try {
         const res = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text }),
         });
+
         if (res.ok) {
           const ct = res.headers.get("content-type") || "";
           if (ct.includes("audio")) {
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-            audio.onerror = () => resolve();
-            audio.play().catch(() => resolve());
-            return;
+            const arrayBuffer = await res.arrayBuffer();
+            if (arrayBuffer.byteLength > 0) {
+              const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
+              const url = URL.createObjectURL(blob);
+              const audio = new Audio(url);
+              audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+              audio.onerror = () => {
+                URL.revokeObjectURL(url);
+                // ElevenLabs audio failed to play — use browser TTS
+                browserSpeak(text, resolve);
+              };
+              try {
+                await audio.play();
+              } catch {
+                URL.revokeObjectURL(url);
+                browserSpeak(text, resolve);
+              }
+              return;
+            }
           }
         }
-      } catch { }
+      } catch (e) {
+        console.error("TTS error:", e);
+      }
 
-      // Browser TTS fallback — pick best available voice
-      window.speechSynthesis.cancel();
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.rate = 1.0; utt.pitch = 1.05; utt.volume = 1.0;
+      // Browser TTS fallback
+      browserSpeak(text, resolve);
+    });
+  }, []);
+
+  const browserSpeak = (text: string, resolve: () => void) => {
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = 1.0; utt.pitch = 1.0; utt.volume = 1.0;
+    // Load voices — they may not be ready immediately
+    const setVoice = () => {
       const voices = window.speechSynthesis.getVoices();
       const pick = voices.find(v =>
         v.name.includes("Samantha") ||
@@ -156,11 +178,15 @@ export default function VoiceAEL() {
         v.name.includes("Karen")
       );
       if (pick) utt.voice = pick;
-      utt.onend = () => resolve();
-      utt.onerror = () => resolve();
-      window.speechSynthesis.speak(utt);
-    });
-  }, []);
+    };
+    setVoice();
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = setVoice;
+    }
+    utt.onend = () => resolve();
+    utt.onerror = () => resolve();
+    window.speechSynthesis.speak(utt);
+  };
 
   // ── EXECUTE ACTIONS ───────────────────────────────────────────────
   const executeActions = useCallback(async (actions: BrainAction[]) => {
