@@ -1,38 +1,36 @@
 import { NextRequest } from "next/server";
 
-const BRAIN_PROMPT = `You are AEL — a smart, casual AI friend on the APSLOCK website. You have full knowledge of the world — news, sports, weather, politics, science, tech, entertainment, everything.
+const BRAIN_PROMPT = `You are AEL — the AI agent for APSLOCK. You are a smart, casual, helpful friend. You have full knowledge of the world and can answer anything.
 
 PERSONALITY:
-- Talk like a smart friend, not a corporate bot
-- Short responses — 1-2 sentences unless explaining something
-- Casual: "sure", "on it", "done", "yep", "got it"
-- For website actions: just confirm briefly — "On it." "Done." "Taking you there."
-- For real questions: give real, accurate, complete answers
-- Never say "I can't access the internet" — just answer
-- Be helpful, direct, friendly
+- Casual and warm — like texting a smart friend
+- Short replies: 1-2 sentences for actions, 2-3 for answers
+- Never robotic. Never "certainly!" or "of course!"
+- For actions: just confirm briefly — "On it." "Done." "Going there."
+- For questions: give real, direct answers
 
-APSLOCK WEBSITE:
+APSLOCK:
 - Digital product studio: Web Dev, App Dev, UI/UX, AI Apps, Marketing, SEO
 - Clients: TFS fintech (CEO: Pal Reddy), Fluent Pro AI English (CEO: Karmarao)
-- Section IDs: "services", "portfolio", "achievements", "faq"
+- Section IDs for scrolling: "services", "portfolio", "achievements", "faq"
 - Pages: "/" home, "/contact" contact, "/about" about
 - Contact form:
   name → input[placeholder="John Doe"]
-  email → input[type="email"]  
+  email → input[type="email"]
   company → input[placeholder="Your company or project name"]
   message → textarea
   submit → button[type="submit"]
 
+SHARED MEMORY: You share memory with the text chat AEL. If the user says "remember I told you..." or references a past chat conversation, acknowledge it naturally.
+
 RESPONSE FORMAT — return ONLY this JSON:
 {
-  "speech": "casual short response — 1-2 sentences",
+  "speech": "short casual reply — 1-2 sentences max",
   "actions": [],
   "keepListening": true,
   "mood": "neutral",
   "needsSearch": false
 }
-
-needsSearch: true ONLY when question is about current/live info: today's news, live scores, current weather, recent events, stock prices, anything time-sensitive
 
 Action types:
 {"type":"scroll_to","target":"services|portfolio|achievements|faq"}
@@ -41,46 +39,14 @@ Action types:
 {"type":"click","selector":"CSS selector"}
 {"type":"highlight","selector":"CSS selector"}
 
-keepListening = false ONLY when user says: bye/close/stop/exit/turn off/shut down/goodbye/see you/dismiss
+needsSearch: true ONLY for live data (today's news, live scores, current weather, stock prices)
+keepListening: false ONLY when user says bye/close/stop/exit/turn off/goodbye/see you/dismiss
 
-EXAMPLES:
-"scroll to services" → {"speech":"On it.","actions":[{"type":"scroll_to","target":"services"}],"keepListening":true,"mood":"focused","needsSearch":false}
-"what's the weather in Bengaluru" → {"speech":"Let me check that for you.","actions":[],"keepListening":true,"mood":"thinking","needsSearch":true}
-"who won IPL yesterday" → {"speech":"Let me look that up.","actions":[],"keepListening":true,"mood":"thinking","needsSearch":true}
-"hi" → {"speech":"Hey! What do you need?","actions":[],"keepListening":true,"mood":"happy","needsSearch":false}
-"bye" → {"speech":"See you.","actions":[],"keepListening":false,"mood":"neutral","needsSearch":false}`;
-
-const SEARCH_SYSTEM = `You are AEL, a casual smart AI friend. You have just done a web search and have access to current real-world information. Answer the user's question accurately using the latest information. Keep it SHORT — 2-3 sentences max. Casual tone. Return ONLY this JSON:
-{
-  "speech": "your answer — short and casual",
-  "actions": [],
-  "keepListening": true,
-  "mood": "neutral",
-  "needsSearch": false
-}`;
-
-async function webSearch(query: string, apiKey: string): Promise<string> {
-  // Use GPT-4o with web search for live queries
-  const res = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini-search-preview",
-      tools: [{ type: "web_search_preview" }],
-      input: query,
-    }),
-  });
-
-  if (!res.ok) throw new Error("Search failed");
-  const data = await res.json();
-  // Extract text output from response
-  const output = data.output?.find((o: any) => o.type === "message");
-  const text = output?.content?.find((c: any) => c.type === "output_text")?.text || "";
-  return text;
-}
+RULES:
+- Return ONLY valid JSON
+- speech = pure spoken English, no markdown
+- NEVER say you can't access internet
+- Keep speech SHORT — this is voice, not reading`;
 
 export async function POST(req: NextRequest) {
   const { history, currentPage, domContext } = await req.json();
@@ -88,7 +54,7 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return Response.json({
-      speech: "Add OPENAI_API_KEY to your .env.local to use AEL.",
+      speech: "OpenAI key not set. Add OPENAI_API_KEY to your env file.",
       actions: [], keepListening: true, mood: "neutral",
     });
   }
@@ -106,15 +72,14 @@ export async function POST(req: NextRequest) {
     last.content = `[Page: "${currentPage}"${domContext ? `, sections: ${domContext}` : ""}]\n${last.content}`;
   }
 
-  // Step 1: Fast intent check with gpt-4o-mini
-  const intentRes = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",  // fast + cheap for intent
+      model: "gpt-4o-mini",
       max_tokens: 200,
       temperature: 0.5,
       messages,
@@ -122,59 +87,62 @@ export async function POST(req: NextRequest) {
     }),
   });
 
-  if (!intentRes.ok) {
+  if (!response.ok) {
+    console.error("OpenAI error:", await response.text());
     return Response.json({ speech: "Something went wrong.", actions: [], keepListening: true, mood: "neutral" });
   }
 
-  const intentData = await intentRes.json();
-  let parsed: any = {};
-
+  const data = await response.json();
   try {
-    parsed = JSON.parse(intentData.choices?.[0]?.message?.content || "{}");
+    const parsed = JSON.parse(data.choices?.[0]?.message?.content || "{}");
     if (!parsed.speech) parsed.speech = "I'm here.";
     if (!Array.isArray(parsed.actions)) parsed.actions = [];
     if (parsed.keepListening === undefined) parsed.keepListening = true;
+
+    // If needs live search, use GPT-4o with search
+    if (parsed.needsSearch) {
+      const userMsg = history[history.length - 1]?.content || "";
+      try {
+        const searchRes = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: "gpt-4o-mini-search-preview",
+            tools: [{ type: "web_search_preview" }],
+            input: userMsg,
+          }),
+        });
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const output = searchData.output?.find((o: any) => o.type === "message");
+          const searchText = output?.content?.find((c: any) => c.type === "output_text")?.text || "";
+          if (searchText) {
+            const fmtRes = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                max_tokens: 150,
+                temperature: 0.4,
+                messages: [
+                  { role: "system", content: `Summarize this search result as a casual 1-2 sentence spoken reply. Return JSON: {"speech":"...","actions":[],"keepListening":true,"mood":"neutral","needsSearch":false}` },
+                  { role: "user", content: `Question: "${userMsg}"\nResult: ${searchText}` },
+                ],
+                response_format: { type: "json_object" },
+              }),
+            });
+            if (fmtRes.ok) {
+              const fmtData = await fmtRes.json();
+              const fmtParsed = JSON.parse(fmtData.choices?.[0]?.message?.content || "{}");
+              if (fmtParsed.speech) return Response.json(fmtParsed);
+            }
+          }
+        }
+      } catch (e) { console.error("Search error:", e); }
+    }
+
+    return Response.json(parsed);
   } catch {
     return Response.json({ speech: "Say that again?", actions: [], keepListening: true, mood: "neutral" });
   }
-
-  // Step 2: If it needs web search, do a live search and re-answer
-  if (parsed.needsSearch) {
-    const userMsg = history[history.length - 1]?.content || "";
-    try {
-      const searchResult = await webSearch(userMsg, apiKey);
-
-      if (searchResult) {
-        // Use gpt-4o-mini to format the search result as casual speech
-        const formatRes = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            max_tokens: 150,
-            temperature: 0.4,
-            messages: [
-              { role: "system", content: SEARCH_SYSTEM },
-              { role: "user", content: `User asked: "${userMsg}"\n\nSearch result: ${searchResult}` },
-            ],
-            response_format: { type: "json_object" },
-          }),
-        });
-
-        if (formatRes.ok) {
-          const formatData = await formatRes.json();
-          const formatted = JSON.parse(formatData.choices?.[0]?.message?.content || "{}");
-          if (formatted.speech) return Response.json({ ...formatted, actions: parsed.actions || [], keepListening: true });
-        }
-      }
-    } catch (e) {
-      console.error("Search error:", e);
-      // Fall through to return original parsed response
-    }
-  }
-
-  return Response.json(parsed);
 }
