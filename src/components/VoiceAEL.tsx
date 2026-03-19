@@ -115,6 +115,8 @@ export default function VoiceAEL() {
   }, []);
 
   // ── SPEAK ─────────────────────────────────────────────────────────
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise(async (resolve) => {
       if (!mountedRef.current) { resolve(); return; }
@@ -123,7 +125,6 @@ export default function VoiceAEL() {
       setInterimCaption("");
       setIsSearching(false);
 
-      // Try ElevenLabs — consistent voice every time
       try {
         const res = await fetch("/api/tts", {
           method: "POST",
@@ -135,41 +136,38 @@ export default function VoiceAEL() {
           const ct = res.headers.get("content-type") || "";
           if (ct.includes("audio")) {
             const arrayBuffer = await res.arrayBuffer();
-            if (arrayBuffer.byteLength > 0) {
-              const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
-              const url = URL.createObjectURL(blob);
-              const audio = new Audio(url);
-              audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-              audio.onerror = () => {
-                URL.revokeObjectURL(url);
-                // ElevenLabs audio failed to play — use browser TTS
-                browserSpeak(text, resolve);
-              };
+            if (arrayBuffer.byteLength > 100) {
               try {
-                await audio.play();
-              } catch {
-                URL.revokeObjectURL(url);
-                browserSpeak(text, resolve);
+                // Use AudioContext — bypasses Chrome autoplay restrictions
+                // Reuse same context across calls to avoid suspension
+                if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
+                  audioCtxRef.current = new AudioContext();
+                }
+                const ctx = audioCtxRef.current;
+                if (ctx.state === "suspended") await ctx.resume();
+
+                const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+                const source = ctx.createBufferSource();
+                source.buffer = decoded;
+                source.connect(ctx.destination);
+                source.onended = () => resolve();
+                source.start(0);
+                return;
+              } catch (audioErr) {
+                console.error("AudioContext decode error:", audioErr);
+                // Fall through to browser TTS
               }
-              return;
             }
           }
         }
       } catch (e) {
-        console.error("TTS error:", e);
+        console.error("TTS fetch error:", e);
       }
 
       // Browser TTS fallback
-      browserSpeak(text, resolve);
-    });
-  }, []);
-
-  const browserSpeak = (text: string, resolve: () => void) => {
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.rate = 1.0; utt.pitch = 1.0; utt.volume = 1.0;
-    // Load voices — they may not be ready immediately
-    const setVoice = () => {
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.rate = 1.0; utt.pitch = 1.0; utt.volume = 1.0;
       const voices = window.speechSynthesis.getVoices();
       const pick = voices.find(v =>
         v.name.includes("Samantha") ||
@@ -178,15 +176,11 @@ export default function VoiceAEL() {
         v.name.includes("Karen")
       );
       if (pick) utt.voice = pick;
-    };
-    setVoice();
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.onvoiceschanged = setVoice;
-    }
-    utt.onend = () => resolve();
-    utt.onerror = () => resolve();
-    window.speechSynthesis.speak(utt);
-  };
+      utt.onend = () => resolve();
+      utt.onerror = () => resolve();
+      window.speechSynthesis.speak(utt);
+    });
+  }, []);
 
   // ── EXECUTE ACTIONS ───────────────────────────────────────────────
   const executeActions = useCallback(async (actions: BrainAction[]) => {
