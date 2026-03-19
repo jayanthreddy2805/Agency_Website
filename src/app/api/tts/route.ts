@@ -9,8 +9,9 @@ export async function POST(req: NextRequest) {
 
   const voiceId = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 
-  // Try models in order — flash first (fastest), turbo as fallback
-  const models = ["eleven_turbo_v2_5", "eleven_turbo_v2", "eleven_monolingual_v1"];
+  // eleven_turbo_v2 works on ALL tiers including free
+  // eleven_multilingual_v2 as fallback
+  const models = ["eleven_turbo_v2", "eleven_multilingual_v2", "eleven_monolingual_v1"];
 
   for (const model of models) {
     try {
@@ -21,7 +22,6 @@ export async function POST(req: NextRequest) {
           headers: {
             "Content-Type": "application/json",
             "xi-api-key": apiKey,
-            "Accept": "audio/mpeg",
           },
           body: JSON.stringify({
             text,
@@ -29,8 +29,6 @@ export async function POST(req: NextRequest) {
             voice_settings: {
               stability: 0.5,
               similarity_boost: 0.75,
-              style: 0.3,
-              use_speaker_boost: true,
             },
           }),
         }
@@ -38,16 +36,17 @@ export async function POST(req: NextRequest) {
 
       if (!response.ok) {
         const err = await response.text();
-        console.error(`ElevenLabs ${model} error:`, err);
-        continue; // try next model
-      }
-
-      const audioBuffer = await response.arrayBuffer();
-      if (audioBuffer.byteLength === 0) {
-        console.error(`ElevenLabs ${model} returned empty audio`);
+        console.error(`[TTS] ${model} failed ${response.status}:`, err);
         continue;
       }
 
+      const audioBuffer = await response.arrayBuffer();
+      if (audioBuffer.byteLength < 100) {
+        console.error(`[TTS] ${model} returned empty audio`);
+        continue;
+      }
+
+      console.log(`[TTS] ${model} success — ${audioBuffer.byteLength} bytes`);
       return new Response(audioBuffer, {
         headers: {
           "Content-Type": "audio/mpeg",
@@ -55,11 +54,10 @@ export async function POST(req: NextRequest) {
         },
       });
     } catch (e) {
-      console.error(`ElevenLabs ${model} exception:`, e);
+      console.error(`[TTS] ${model} exception:`, e);
       continue;
     }
   }
 
-  // All models failed — return fallback signal
   return Response.json({ fallback: true });
 }

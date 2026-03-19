@@ -92,6 +92,7 @@ export default function VoiceAEL() {
   const wakeRecRef = useRef<any>(null);
   const mountedRef = useRef(true);
   const processingRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
@@ -115,8 +116,6 @@ export default function VoiceAEL() {
   }, []);
 
   // ── SPEAK ─────────────────────────────────────────────────────────
-  const audioCtxRef = useRef<AudioContext | null>(null);
-
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise(async (resolve) => {
       if (!mountedRef.current) { resolve(); return; }
