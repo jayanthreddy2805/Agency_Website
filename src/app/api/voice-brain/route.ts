@@ -1,4 +1,16 @@
 import { NextRequest } from "next/server";
+import { NLU_LOOKUP } from "./nlu-data";
+
+// Random jokes pool
+const JOKES = [
+  "Why don't scientists trust atoms? Because they make up everything — like my competitors' promises.",
+  "Why did the developer go broke? He used up all his cache.",
+  "Why do Java developers wear glasses? Because they don't C sharp!",
+  "What's a website's favorite music? Heavy metal — lots of tags!",
+  "Why did the startup fail? Too many pivots, not enough product. Call APSLOCK next time!",
+  "Why do programmers prefer dark mode? Because light attracts bugs!",
+  "What do you call a fish without eyes? A fsh. Just like a website without UX!",
+];
 
 // ─────────────────────────────────────────────────────────────────
 // TAVILY WEB SEARCH
