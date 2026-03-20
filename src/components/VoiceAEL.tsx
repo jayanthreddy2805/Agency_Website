@@ -92,7 +92,6 @@ export default function VoiceAEL() {
   const wakeRecRef = useRef<any>(null);
   const mountedRef = useRef(true);
   const processingRef = useRef(false);
-  const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
@@ -115,69 +114,62 @@ export default function VoiceAEL() {
     setInterimCaption("");
   }, []);
 
-  // ── SPEAK ─────────────────────────────────────────────────────────
+  // ── SPEAK — Google UK English Male, consistent every time ──────────
+  const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
+  const getVoice = (): SpeechSynthesisVoice | null => {
+    if (selectedVoiceRef.current) return selectedVoiceRef.current;
+    const all = window.speechSynthesis.getVoices();
+    // Priority: best male English voices first
+    const priority = [
+      "Google UK English Male",
+      "Daniel",
+      "Alex",
+      "Microsoft Ryan",
+      "Google UK English Female",
+      "Samantha",
+      "Karen",
+    ];
+    for (const name of priority) {
+      const found = all.find(v => v.name.includes(name));
+      if (found) { selectedVoiceRef.current = found; return found; }
+    }
+    const eng = all.find(v => v.lang.startsWith("en"));
+    if (eng) { selectedVoiceRef.current = eng; return eng; }
+    return null;
+  };
+
   const speak = useCallback((text: string): Promise<void> => {
-    return new Promise(async (resolve) => {
+    return new Promise((resolve) => {
       if (!mountedRef.current) { resolve(); return; }
       setPhase("speaking");
       setCaption(text);
       setInterimCaption("");
       setIsSearching(false);
 
-      try {
-        const res = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        });
-
-        if (res.ok) {
-          const ct = res.headers.get("content-type") || "";
-          if (ct.includes("audio")) {
-            const arrayBuffer = await res.arrayBuffer();
-            if (arrayBuffer.byteLength > 100) {
-              try {
-                // Use AudioContext — bypasses Chrome autoplay restrictions
-                // Reuse same context across calls to avoid suspension
-                if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
-                  audioCtxRef.current = new AudioContext();
-                }
-                const ctx = audioCtxRef.current;
-                if (ctx.state === "suspended") await ctx.resume();
-
-                const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
-                const source = ctx.createBufferSource();
-                source.buffer = decoded;
-                source.connect(ctx.destination);
-                source.onended = () => resolve();
-                source.start(0);
-                return;
-              } catch (audioErr) {
-                console.error("AudioContext decode error:", audioErr);
-                // Fall through to browser TTS
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.error("TTS fetch error:", e);
-      }
-
-      // Browser TTS fallback
       window.speechSynthesis.cancel();
       const utt = new SpeechSynthesisUtterance(text);
-      utt.rate = 1.0; utt.pitch = 1.0; utt.volume = 1.0;
-      const voices = window.speechSynthesis.getVoices();
-      const pick = voices.find(v =>
-        v.name.includes("Samantha") ||
-        v.name.includes("Google UK English Female") ||
-        v.name.includes("Microsoft Aria") ||
-        v.name.includes("Karen")
-      );
-      if (pick) utt.voice = pick;
+      utt.rate = 0.95;
+      utt.pitch = 1.0;
+      utt.volume = 1.0;
       utt.onend = () => resolve();
       utt.onerror = () => resolve();
-      window.speechSynthesis.speak(utt);
+
+      const doSpeak = () => {
+        const voice = getVoice();
+        if (voice) utt.voice = voice;
+        window.speechSynthesis.speak(utt);
+      };
+
+      // Voices load async — wait if not ready yet
+      if (window.speechSynthesis.getVoices().length > 0) {
+        doSpeak();
+      } else {
+        window.speechSynthesis.onvoiceschanged = () => {
+          window.speechSynthesis.onvoiceschanged = null;
+          doSpeak();
+        };
+      }
     });
   }, []);
 
