@@ -26,10 +26,9 @@ And add exactly this on its own line: {{BOOK_A_CALL}}
 
 // Verified working Gemini model names on v1beta
 const MODELS = [
-  "gemini-2.0-flash-lite",
   "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-latest",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash-exp",
 ];
 
 export async function POST(req: NextRequest) {
