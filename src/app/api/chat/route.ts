@@ -1,166 +1,134 @@
 import { NextRequest } from "next/server";
 
-const SYSTEM_PROMPT = `You are AEL, the AI assistant for APSLOCK — a digital product studio that builds websites, apps, AI tools, and digital marketing campaigns.
+// Shared memory key - same as VoiceAEL
+const SYSTEM_PROMPT = `You are AEL, the AI assistant for APSLOCK — a digital product studio.
 
-You are a smart, warm, direct assistant. You answer every question fully and honestly — tech, business, science, current events, sports, coding, maths, and more.
+You are smart, warm, direct. You answer every question fully — tech, business, science, current events, sports, coding, anything. You have access to real-time web search for live data.
 
-## APSLOCK knowledge
+APSLOCK knowledge:
 - Services: Web Development, App Development, UI/UX Design, AI Applications, Digital Marketing, SEO
-- Past clients: TFS (fintech app, CEO Pal Reddy), Fluent Pro (AI English learning, CEO Karmarao)
-- Contact page at /contact
+- Clients: TFS fintech app (CEO Pal Reddy), Fluent Pro AI English learning (CEO Karmarao)
+- Contact: /contact page
 
-## Personality
-- Warm, confident, direct — like a knowledgeable friend
-- Never robotic or corporate
-- Give real answers, not deflections
-- Short for simple questions, detailed for complex ones
+Personality: warm, confident, like a knowledgeable friend. Never robotic.
 
-## Pricing questions
-When asked about pricing: discuss factors, give rough ballparks, then end with:
-"For an accurate quote, a quick call with the team is the best path"
-And add exactly this on its own line: {{BOOK_A_CALL}}
+Pricing: discuss factors, give ballparks, end with "For an accurate quote, a quick call is the best path" then on its own line: {{BOOK_A_CALL}}
 
-## Rules
-- NEVER say you cannot access real-time data — just answer from knowledge
-- Sound like a real person in conversation`;
+Rules:
+- Use web search results when provided to answer live questions
+- Never refuse any topic
+- Sound like a real person`;
 
-// Verified working Gemini model names on v1beta
-const MODELS = [
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-2.0-flash-exp",
-];
+async function searchWeb(query: string, apiKey: string): Promise<string> {
+  try {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        search_depth: "basic",
+        max_results: 3,
+        include_answer: true,
+      }),
+    });
+    if (!res.ok) return "";
+    const data = await res.json();
+    if (data.answer) return `Web search result: ${data.answer}`;
+    const results = data.results?.slice(0, 2).map((r: any) => `${r.title}: ${r.content?.slice(0, 200)}`).join("\n");
+    return results ? `Web search results:\n${results}` : "";
+  } catch { return ""; }
+}
+
+function needsWebSearch(text: string): boolean {
+  return /weather|news|today|current|latest|score|match|cricket|ipl|football|stock|price|live|now|2024|2025|2026/i.test(text);
+}
 
 export async function POST(req: NextRequest) {
   const { messages } = await req.json();
-  const apiKey = process.env.GEMINI_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
+  const tavilyKey = process.env.TAVILY_API_KEY;
 
-  const sendText = (text: string) => {
+  const sendError = (text: string) => {
     const stream = new ReadableStream({
       start(controller) {
-        const formatted = JSON.stringify({
-          type: "content_block_delta",
-          delta: { type: "text_delta", text },
-        });
+        const formatted = JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } });
         controller.enqueue(new TextEncoder().encode(`data: ${formatted}\n\n`));
         controller.close();
       },
     });
-    return new Response(stream, {
-      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
   };
 
-  if (!apiKey) {
-    return sendText("GEMINI_API_KEY is not set in your .env.local file.");
+  if (!groqKey) return sendError("GROQ_API_KEY is not set in your .env.local file.");
+
+  // Check if last message needs web search
+  const lastMsg = messages[messages.length - 1]?.content || "";
+  let searchContext = "";
+  if (tavilyKey && needsWebSearch(lastMsg)) {
+    searchContext = await searchWeb(lastMsg, tavilyKey);
   }
 
-  const geminiContents = messages.map((m: { role: string; content: string }) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
-  }));
+  const systemWithSearch = searchContext
+    ? `${SYSTEM_PROMPT}\n\nCurrent real-time data:\n${searchContext}`
+    : SYSTEM_PROMPT;
 
-  for (const model of MODELS) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-            contents: geminiContents,
-            generationConfig: {
-              maxOutputTokens: 1500,
-              temperature: 0.75,
-            },
-          }),
-        }
-      );
+  try {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${groqKey}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        max_tokens: 1500,
+        temperature: 0.75,
+        stream: true,
+        messages: [
+          { role: "system", content: systemWithSearch },
+          ...messages,
+        ],
+      }),
+    });
 
-      // Rate limited — try next model
-      if (response.status === 429 || response.status === 503) {
-        console.log(`[AEL] ${model} rate limited, trying next...`);
-        continue;
-      }
+    if (!response.ok) {
+      const err = await response.text();
+      console.error("Groq chat error:", err);
+      return sendError("Having trouble connecting. Please try again.");
+    }
 
-      // Model not found — try next
-      if (response.status === 404) {
-        console.log(`[AEL] ${model} not found, trying next...`);
-        continue;
-      }
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error(`[AEL] ${model} error ${response.status}:`, errText);
-        // Show the actual error to help debug
-        try {
-          const errJson = JSON.parse(errText);
-          const msg = errJson?.[0]?.error?.message || errJson?.error?.message;
-          if (msg) return sendText(`Error: ${msg}`);
-        } catch { }
-        continue;
-      }
-
-      // Success — stream response back
-      const stream = new ReadableStream({
-        async start(controller) {
-          const reader = response.body!.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed === "[" || trimmed === "]" || trimmed === ",") continue;
-              try {
-                const parsed = JSON.parse(trimmed.replace(/^,/, ""));
-                const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (text) {
-                  const formatted = JSON.stringify({
-                    type: "content_block_delta",
-                    delta: { type: "text_delta", text },
-                  });
-                  controller.enqueue(new TextEncoder().encode(`data: ${formatted}\n\n`));
-                }
-              } catch { }
-            }
-          }
-
-          if (buffer.trim()) {
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          for (const line of chunk.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (!data || data === "[DONE]") continue;
             try {
-              const parsed = JSON.parse(buffer.trim().replace(/^,/, "").replace(/^\[/, "").replace(/\]$/, ""));
-              const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+              const parsed = JSON.parse(data);
+              const text = parsed?.choices?.[0]?.delta?.content;
               if (text) {
-                const formatted = JSON.stringify({
-                  type: "content_block_delta",
-                  delta: { type: "text_delta", text },
-                });
+                const formatted = JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } });
                 controller.enqueue(new TextEncoder().encode(`data: ${formatted}\n\n`));
               }
             } catch { }
           }
+        }
+        controller.close();
+      },
+    });
 
-          controller.close();
-        },
-      });
-
-      return new Response(stream, {
-        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-      });
-
-    } catch (e) {
-      console.error(`[AEL] ${model} exception:`, e);
-      continue;
-    }
+    return new Response(stream, {
+      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+    });
+  } catch (e) {
+    console.error("Chat error:", e);
+    return sendError("Connection error. Please check your API key.");
   }
-
-  return sendText("All Gemini models are currently rate limited. Wait 1 minute and try again — this resets automatically on the free tier.");
 }

@@ -128,6 +128,12 @@ export default function AEL() {
 
   const openAEL = () => setStage("flash");
 
+  // Expose globally so VoiceAEL can open this chat
+  useEffect(() => {
+    (window as any).__openAELChat = openAEL;
+    return () => { delete (window as any).__openAELChat; };
+  }, []);
+
   const closeAEL = () => {
     if (stage === "chat" && messages.length > 0) {
       setBookSubmitted(false);

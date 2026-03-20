@@ -7,7 +7,7 @@ type Mood = "neutral" | "happy" | "focused" | "thinking";
 type Phase = "dormant" | "listening" | "processing" | "speaking";
 
 interface BrainAction {
-  type: "scroll_to" | "navigate" | "fill" | "click" | "highlight";
+  type: "scroll_to" | "navigate" | "fill" | "click" | "highlight" | "open_ael_chat";
   target?: string;
   page?: string;
   selector?: string;
@@ -211,6 +211,15 @@ export default function VoiceAEL() {
           if (el) el.click();
           break;
         }
+        case "open_ael_chat": {
+          // Open the AEL text chat widget
+          const openFn = (window as any).__openAELChat;
+          if (openFn) {
+            openFn();
+          }
+          break;
+        }
+
         case "highlight": {
           const el = document.querySelector(a.selector!) as HTMLElement | null;
           if (el) {
