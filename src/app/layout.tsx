@@ -14,14 +14,30 @@ const sora = Sora({
   display: "swap",
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("http://localhost:3000"),
+  metadataBase: new URL(siteUrl),
   title: "APSLOCK — Digital Product Studio",
   description: "We build digital products that drive growth.",
-  icons: { icon: "/logon.png" },
+  icons: {
+    icon: "/mapl.png",
+    apple: "/mapl.png",
+    shortcut: "/mapl.png",
+  },
   openGraph: {
     title: "APSLOCK — Digital Product Studio",
-    images: ["/logon.png"],
+    description: "We build digital products that drive growth.",
+    images: ["/mapl.png"],
+    url: siteUrl,
+    siteName: "APSLOCK",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "APSLOCK — Digital Product Studio",
+    description: "We build digital products that drive growth.",
+    images: ["/mapl.png"],
   },
 };
 
@@ -33,6 +49,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={sora.variable} suppressHydrationWarning>
       <head>
+        <link rel="icon" href="/mapl.png" />
+        <link rel="apple-touch-icon" href="/mapl.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

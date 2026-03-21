@@ -1,9 +1,17 @@
 import { NextRequest } from "next/server";
 
-// Shared memory key - same as VoiceAEL
+const getCurrentDateString = () => {
+  const now = new Date();
+  return now.toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+};
+
 const SYSTEM_PROMPT = `You are AEL, the AI assistant for APSLOCK — a digital product studio.
 
-You are smart, warm, direct. You answer every question fully — tech, business, science, current events, sports, coding, anything. You have access to real-time web search for live data.
+TODAY'S DATE: ${getCurrentDateString()}. Always use this date when answering date, time, or current event questions. Never say it is 2024 — it is 2026.
+
+You are smart, warm, direct. You answer every question fully using the latest web search results provided to you. Always prefer web search data over your training knowledge for anything factual or current.
 
 APSLOCK knowledge:
 - Services: Web Development, App Development, UI/UX Design, AI Applications, Digital Marketing, SEO
@@ -12,12 +20,15 @@ APSLOCK knowledge:
 
 Personality: warm, confident, like a knowledgeable friend. Never robotic.
 
-Pricing: discuss factors, give ballparks, end with "For an accurate quote, a quick call is the best path" then on its own line: {{BOOK_A_CALL}}
+When you have web search results, always use them to answer — they are more up to date than your training.
+
+PRICING RULE: Only when someone asks for a specific price quote or cost estimate for a project, end your response with {{BOOK_A_CALL}} on its own line at the very end — nothing after it. Do NOT add {{BOOK_A_CALL}} for weather, time, date, news, sports, general knowledge or casual questions.
 
 Rules:
-- Use web search results when provided to answer live questions
+- ALWAYS use web search results when provided — they are real-time data
 - Never refuse any topic
-- Sound like a real person`;
+- Sound like a real person
+- For date/time questions: use today's date above and be precise`;
 
 async function searchWeb(query: string, apiKey: string): Promise<string> {
   try {
@@ -28,20 +39,24 @@ async function searchWeb(query: string, apiKey: string): Promise<string> {
         api_key: apiKey,
         query,
         search_depth: "basic",
-        max_results: 3,
+        max_results: 4,
         include_answer: true,
       }),
     });
     if (!res.ok) return "";
     const data = await res.json();
     if (data.answer) return `Web search result: ${data.answer}`;
-    const results = data.results?.slice(0, 2).map((r: any) => `${r.title}: ${r.content?.slice(0, 200)}`).join("\n");
+    const results = data.results
+      ?.slice(0, 3)
+      .map((r: any) => `${r.title}: ${r.content?.slice(0, 300)}`)
+      .join("\n");
     return results ? `Web search results:\n${results}` : "";
   } catch { return ""; }
 }
 
-function needsWebSearch(text: string): boolean {
-  return /weather|news|today|current|latest|score|match|cricket|ipl|football|stock|price|live|now|2024|2025|2026/i.test(text);
+// Skip search only for pure APSLOCK internal questions or greetings
+function skipSearch(text: string): boolean {
+  return /^(hi|hello|hey|how are you|what is apslock|what do you do|your services|book a call|contact|tell me about yourself)\s*[?!.]?$/i.test(text.trim());
 }
 
 export async function POST(req: NextRequest) {
@@ -62,15 +77,14 @@ export async function POST(req: NextRequest) {
 
   if (!groqKey) return sendError("GROQ_API_KEY is not set in your .env.local file.");
 
-  // Check if last message needs web search
   const lastMsg = messages[messages.length - 1]?.content || "";
   let searchContext = "";
-  if (tavilyKey && needsWebSearch(lastMsg)) {
+  if (tavilyKey && !skipSearch(lastMsg)) {
     searchContext = await searchWeb(lastMsg, tavilyKey);
   }
 
   const systemWithSearch = searchContext
-    ? `${SYSTEM_PROMPT}\n\nCurrent real-time data:\n${searchContext}`
+    ? `${SYSTEM_PROMPT}\n\n---\nLIVE WEB DATA (use this to answer — more accurate than your training):\n${searchContext}\n---`
     : SYSTEM_PROMPT;
 
   try {
