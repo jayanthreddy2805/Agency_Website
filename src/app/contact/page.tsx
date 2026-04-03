@@ -9,6 +9,11 @@ export default function ContactPage() {
   const [fileError, setFileError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const MAX_MB = 50;
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [message, setMessage] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
 
   const handleFile = (f: File) => {
     setFileError("");
@@ -26,13 +31,22 @@ export default function ContactPage() {
     if (f) handleFile(f);
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 900));
-    setLoading(false);
-    setSent(true);
-  };
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setLoading(true);
+  try {
+    const res = await fetch("/api/contact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, company, services: selected, message }),
+    });
+    const data = await res.json();
+    if (data.success) setSent(true);
+  } catch {
+    console.error("Contact form error");
+  }
+  setLoading(false);
+};
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
