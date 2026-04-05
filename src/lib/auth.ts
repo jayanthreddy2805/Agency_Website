@@ -1,8 +1,5 @@
-// ─── Auth config ─────────────────────────────────────────────────────
-// Add more users here later
-const VALID_USERS: Record<string, string> = {
-  J: "28",
-};
+import { supabase } from "./supabase";
+import bcrypt from "bcryptjs";
 
 export interface AELUser {
   username: string;
@@ -10,39 +7,6 @@ export interface AELUser {
   displayName: string;
 }
 
-const SESSION_KEY = "ael_session";
-
-// ─── Login ────────────────────────────────────────────────────────────
-export function login(username: string, password: string): AELUser | null {
-  if (VALID_USERS[username] && VALID_USERS[username] === password) {
-    const user: AELUser = {
-      username,
-      loginTime: Date.now(),
-      displayName: username,
-    };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-    return user;
-  }
-  return null;
-}
-
-// ─── Logout ───────────────────────────────────────────────────────────
-export function logout(): void {
-  localStorage.removeItem(SESSION_KEY);
-}
-
-// ─── Get current user ─────────────────────────────────────────────────
-export function getCurrentUser(): AELUser | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as AELUser;
-  } catch {
-    return null;
-  }
-}
-
-// ─── Per-user chat history ────────────────────────────────────────────
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -54,54 +18,96 @@ export interface UserProfile {
   firstSeen: number;
   lastSeen: number;
   totalMessages: number;
-  topics: string[];        // topics user has discussed
-  preferences: string[];   // learned preferences
-  facts: string[];         // facts learned about user
+  topics: string[];
+  preferences: string[];
+  facts: string[];
 }
 
-function historyKey(username: string): string {
-  return `ael_chat_${username}`;
-}
+const SESSION_KEY = "ael_session";
 
-function profileKey(username: string): string {
-  return `ael_profile_${username}`;
-}
-
-// ─── Save chat message ────────────────────────────────────────────────
-export function saveMessage(username: string, msg: ChatMessage): void {
+export function getCurrentUser(): AELUser | null {
   try {
-    const key = historyKey(username);
-    const existing: ChatMessage[] = JSON.parse(
-      localStorage.getItem(key) || "[]"
-    );
-    existing.push(msg);
-    // Keep last 100 messages
-    localStorage.setItem(key, JSON.stringify(existing.slice(-100)));
-  } catch {}
-}
-
-// ─── Load chat history ────────────────────────────────────────────────
-export function loadChatHistory(username: string): ChatMessage[] {
-  try {
-    const raw = localStorage.getItem(historyKey(username));
-    return raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as AELUser;
   } catch {
-    return [];
+    return null;
   }
 }
 
-// ─── Clear chat history ───────────────────────────────────────────────
-export function clearChatHistory(username: string): void {
-  localStorage.removeItem(historyKey(username));
+export async function login(username: string, password: string): Promise<AELUser | null> {
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("username", username)
+      .single();
+
+    if (error || !data) return null;
+
+    const valid = await bcrypt.compare(password, data.password_hash);
+    if (!valid) return null;
+
+    const user: AELUser = {
+      username,
+      loginTime: Date.now(),
+      displayName: username,
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    return user;
+  } catch {
+    return null;
+  }
 }
 
-// ─── Load/save user profile ───────────────────────────────────────────
-export function loadUserProfile(username: string): UserProfile {
-  try {
-    const raw = localStorage.getItem(profileKey(username));
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return {
+export function logout(): void {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+export async function saveMessage(username: string, msg: ChatMessage): Promise<void> {
+  await supabase.from("chat_history").insert({
+    username,
+    role: msg.role,
+    content: msg.content,
+    timestamp: msg.timestamp,
+  });
+}
+
+export async function loadChatHistory(username: string): Promise<ChatMessage[]> {
+  const { data } = await supabase
+    .from("chat_history")
+    .select("*")
+    .eq("username", username)
+    .order("timestamp", { ascending: true })
+    .limit(100);
+
+  return (data || []).map((d) => ({
+    role: d.role,
+    content: d.content,
+    timestamp: d.timestamp,
+  }));
+}
+
+export async function loadUserProfile(username: string): Promise<UserProfile> {
+  const { data } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("username", username)
+    .single();
+
+  if (data) {
+    return {
+      username: data.username,
+      firstSeen: data.first_seen,
+      lastSeen: data.last_seen,
+      totalMessages: data.total_messages,
+      topics: data.topics || [],
+      preferences: data.preferences || [],
+      facts: data.facts || [],
+    };
+  }
+
+  const newProfile: UserProfile = {
     username,
     firstSeen: Date.now(),
     lastSeen: Date.now(),
@@ -110,19 +116,35 @@ export function loadUserProfile(username: string): UserProfile {
     preferences: [],
     facts: [],
   };
+
+  await supabase.from("user_profiles").insert({
+    username,
+    first_seen: newProfile.firstSeen,
+    last_seen: newProfile.lastSeen,
+    total_messages: 0,
+    topics: [],
+    preferences: [],
+    facts: [],
+  });
+
+  return newProfile;
 }
 
-export function saveUserProfile(profile: UserProfile): void {
-  try {
-    profile.lastSeen = Date.now();
-    localStorage.setItem(profileKey(profile.username), JSON.stringify(profile));
-  } catch {}
+export async function saveUserProfile(profile: UserProfile): Promise<void> {
+  await supabase.from("user_profiles").upsert({
+    username: profile.username,
+    first_seen: profile.firstSeen,
+    last_seen: Date.now(),
+    total_messages: profile.totalMessages,
+    topics: profile.topics,
+    preferences: profile.preferences,
+    facts: profile.facts,
+  });
 }
 
-// ─── Build user context string for AI ────────────────────────────────
-export function buildUserContext(username: string): string {
-  const profile = loadUserProfile(username);
-  const history = loadChatHistory(username);
+export async function buildUserContext(username: string): Promise<string> {
+  const profile = await loadUserProfile(username);
+  const history = await loadChatHistory(username);
   const recentMessages = history.slice(-20);
 
   let context = `USER PROFILE:
@@ -130,18 +152,15 @@ export function buildUserContext(username: string): string {
 - Total messages sent: ${profile.totalMessages}
 - First conversation: ${new Date(profile.firstSeen).toLocaleDateString()}`;
 
-  if (profile.facts.length > 0) {
+  if (profile.facts.length > 0)
     context += `\n- Known facts about user: ${profile.facts.join(", ")}`;
-  }
-  if (profile.preferences.length > 0) {
+  if (profile.preferences.length > 0)
     context += `\n- User preferences: ${profile.preferences.join(", ")}`;
-  }
-  if (profile.topics.length > 0) {
+  if (profile.topics.length > 0)
     context += `\n- Topics they discuss: ${profile.topics.slice(-10).join(", ")}`;
-  }
 
   if (recentMessages.length > 0) {
-    context += `\n\nRECENT CONVERSATION HISTORY (last ${recentMessages.length} messages):`;
+    context += `\n\nRECENT CONVERSATION HISTORY:`;
     recentMessages.forEach((m) => {
       context += `\n[${m.role === "user" ? username : "AEL"}]: ${m.content.slice(0, 150)}`;
     });
@@ -150,57 +169,36 @@ export function buildUserContext(username: string): string {
   return context;
 }
 
-// ─── Update profile from conversation ────────────────────────────────
-export function updateProfileFromMessage(
-  username: string,
-  userMessage: string
-): void {
-  const profile = loadUserProfile(username);
+export async function updateProfileFromMessage(username: string, userMessage: string): Promise<void> {
+  const profile = await loadUserProfile(username);
   profile.totalMessages += 1;
 
-  // Extract facts about user from message
-  const namePhrases = userMessage.match(
-    /(?:i am|my name is|call me|i'm)\s+([A-Z][a-zA-Z\s]{1,20})/i
-  );
+  const namePhrases = userMessage.match(/(?:i am|my name is|call me|i'm)\s+([A-Z][a-zA-Z\s]{1,20})/i);
   if (namePhrases?.[1]) {
     const fact = `name is ${namePhrases[1].trim()}`;
     if (!profile.facts.includes(fact)) profile.facts.push(fact);
   }
 
-  const locationPhrases = userMessage.match(
-    /(?:i live in|i'm from|i am from|based in)\s+([A-Z][a-zA-Z\s,]{2,30})/i
-  );
+  const locationPhrases = userMessage.match(/(?:i live in|i'm from|i am from|based in)\s+([A-Z][a-zA-Z\s,]{2,30})/i);
   if (locationPhrases?.[1]) {
     const fact = `lives in ${locationPhrases[1].trim()}`;
     profile.facts = profile.facts.filter((f) => !f.startsWith("lives in"));
     profile.facts.push(fact);
   }
 
-  // Track topics
   const topicKeywords: Record<string, string> = {
-    weather: "weather",
-    cricket: "cricket/sports",
-    football: "football/sports",
-    code: "coding",
-    website: "web development",
-    app: "app development",
-    design: "UI/UX design",
-    marketing: "digital marketing",
-    price: "pricing",
-    cost: "pricing",
+    weather: "weather", cricket: "cricket/sports", football: "football/sports",
+    code: "coding", website: "web development", app: "app development",
+    design: "UI/UX design", marketing: "digital marketing", price: "pricing", cost: "pricing",
   };
+
   Object.entries(topicKeywords).forEach(([keyword, topic]) => {
-    if (
-      userMessage.toLowerCase().includes(keyword) &&
-      !profile.topics.includes(topic)
-    ) {
+    if (userMessage.toLowerCase().includes(keyword) && !profile.topics.includes(topic))
       profile.topics.push(topic);
-    }
   });
 
-  // Keep topics list manageable
   if (profile.topics.length > 20) profile.topics = profile.topics.slice(-20);
   if (profile.facts.length > 15) profile.facts = profile.facts.slice(-15);
 
-  saveUserProfile(profile);
+  await saveUserProfile(profile);
 }

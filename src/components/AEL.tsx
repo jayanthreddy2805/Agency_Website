@@ -84,12 +84,11 @@ export default function AEL() {
 
   // ── Load user on mount ──────────────────────────────────────────────
   useEffect(() => {
-    const user = getCurrentUser();
-    setCurrentUser(user);
+  const user = getCurrentUser();
+  setCurrentUser(user);
 
-    if (user) {
-      // Load this user's chat history
-      const history = loadChatHistory(user.username);
+  if (user) {
+    loadChatHistory(user.username).then((history) => {
       if (history.length > 0) {
         setMessages(
           history.slice(-30).map((h) => ({
@@ -98,8 +97,9 @@ export default function AEL() {
           }))
         );
       }
-    }
-  }, []);
+    });
+  }
+}, []);
 
   // ── Intro animation ─────────────────────────────────────────────────
   useEffect(() => {
@@ -201,12 +201,12 @@ export default function AEL() {
 
     // Save to per-user history
     if (currentUser) {
-      saveMessage(currentUser.username, {
-        role: "user",
-        content: userText,
-        timestamp: Date.now(),
-      });
-      updateProfileFromMessage(currentUser.username, userText);
+    await saveMessage(currentUser.username, {
+      role: "user",
+      content: userText,
+      timestamp: Date.now(),
+    });
+    await updateProfileFromMessage(currentUser.username, userText);
     }
 
     // Build API messages (last 20 for context)
@@ -217,8 +217,8 @@ export default function AEL() {
 
     // Build user context for personalization
     const userContext = currentUser
-      ? buildUserContext(currentUser.username)
-      : "";
+  ? await buildUserContext(currentUser.username)
+  : "";
 
     try {
       const response = await fetch("/api/chat", {
@@ -283,7 +283,7 @@ export default function AEL() {
 
       // Save assistant reply to per-user history
       if (currentUser && fullReply) {
-        saveMessage(currentUser.username, {
+        await saveMessage(currentUser.username, {
           role: "assistant",
           content: fullReply.replace("{{BOOK_A_CALL}}", "").trimEnd(),
           timestamp: Date.now(),
@@ -291,13 +291,7 @@ export default function AEL() {
       }
 
       // Also save to shared VoiceAEL memory
-      try {
-        const KEY = "ael_history";
-        const saved = JSON.parse(localStorage.getItem(KEY) || "[]");
-        saved.push({ role: "user", content: userText });
-        saved.push({ role: "assistant", content: fullReply.replace("{{BOOK_A_CALL}}", "").trimEnd() });
-        localStorage.setItem(KEY, JSON.stringify(saved.slice(-30)));
-      } catch {}
+      
     } catch {
       setThinking(false);
       setStreaming(false);

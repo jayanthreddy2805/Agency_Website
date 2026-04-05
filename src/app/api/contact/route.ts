@@ -31,6 +31,16 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
+    // Save to Supabase
+    const { supabase } = await import("@/lib/supabase");
+    await supabase.from("contact_submissions").insert({
+      name,
+      email,
+      company: company || null,
+      services: Array.isArray(services) ? services : [],
+      message,
+    });
+
     // ── Optional: Web3Forms (add WEB3FORMS_KEY to .env.local) ──────────
     const web3Key = process.env.WEB3FORMS_KEY;
     if (web3Key) {
